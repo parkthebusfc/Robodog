@@ -17,7 +17,7 @@ def train_go1(headless=True):
     from go1_gym_learn.ppo_cse import RunnerArgs
 
     config_go1(Cfg)
-
+    Cfg.env.num_envs = 4096
     Cfg.commands.num_lin_vel_bins = 30
     Cfg.commands.num_ang_vel_bins = 30
     Cfg.curriculum_thresholds.tracking_ang_vel = 0.7
@@ -150,9 +150,9 @@ def train_go1(headless=True):
 
 
 
-    Cfg.commands.lin_vel_x = [-1.0, 1.0]
-    Cfg.commands.lin_vel_y = [-0.6, 0.6]
-    Cfg.commands.ang_vel_yaw = [-1.0, 1.0]
+    Cfg.commands.lin_vel_x = [-0.5, 0.5]
+    Cfg.commands.lin_vel_y = [-0.5, 0.5]
+    Cfg.commands.ang_vel_yaw = [-0.5, 0.25]
     Cfg.commands.body_height_cmd = [-0.25, 0.15]
     Cfg.commands.gait_frequency_cmd_range = [2.0, 4.0]
     Cfg.commands.gait_phase_cmd_range = [0.0, 1.0]
@@ -204,7 +204,7 @@ def train_go1(headless=True):
     Cfg.commands.binary_phases = True
     Cfg.commands.gaitwise_curricula = True
 
-    env = VelocityTrackingEasyEnv(sim_device='cuda:0', headless=False, cfg=Cfg)
+    env = VelocityTrackingEasyEnv(sim_device='cuda:0', headless=headless, cfg=Cfg)
 
     # log the experiment parameters
     logger.log_params(AC_Args=vars(AC_Args), PPO_Args=vars(PPO_Args), RunnerArgs=vars(RunnerArgs),
@@ -253,4 +253,4 @@ if __name__ == '__main__':
                 """, filename=".charts.yml", dedent=True)
 
     # to see the environment rendering, set headless=False
-    train_go1(headless=False)
+    train_go1(headless=True)
