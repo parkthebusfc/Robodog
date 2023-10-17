@@ -91,7 +91,7 @@ def dog_walk(env,policy, obs, num_eval_steps, x_vel_cmd, y_vel_cmd, yaw_vel_cmd)
     gaits = {"pronking": [0, 0, 0],
              "trotting": [0.5, 0, 0],
              "bounding": [0, 0.5, 0],
-             "pacing": [0, 0, 0.5]}
+             "pacing": [0, 0, -0.5]}
 
     # x_vel_cmd, y_vel_cmd, yaw_vel_cmed = 0.4, 0.0, 0.0
     body_height_cmd = 0.0
@@ -119,7 +119,8 @@ def dog_walk(env,policy, obs, num_eval_steps, x_vel_cmd, y_vel_cmd, yaw_vel_cmd)
         env.commands[:, 11] = roll_cmd
         env.commands[:, 12] = stance_width_cmd
         obs, rew, done, info = env.step(actions)
-        measured_vels[i,:] = env.base_lin_vel[:, 0].cpu()
+        measured_vels[i,:] = env.base_lin_vel[0, :].cpu()
+
     
     return measured_vels
 
@@ -131,7 +132,8 @@ def play_go1(headless=True):
     import glob
     import os
 
-    # os.mkdir("./imdump")
+    if not os.path.exists("./imdump"):
+        os.mkdir("./imdump")
 
     label = "gait-conditioned-agility/pretrain-v0/train"
 
@@ -150,32 +152,23 @@ def play_go1(headless=True):
         obs_vel = dog_walk(env,policy, obs, steps_each, *cmd)
         num_eval_steps += steps_each
         if observed_vels is None:
-            observed_vels = obs_vel
+            observed_vels = obs_vel.copy()
             command_vels_array = np.tile(np.array(cmd),(steps_each,1))
         else:
-            observed_vels = np.concatenate((observed_vels, obs_vel), axis = 0)
+            observed_vels = np.concatenate((observed_vels, obs_vel.copy()), axis = 0)
             command_vels_array = np.concatenate((command_vels_array,np.tile(np.array(cmd),(steps_each,1))), axis=0)
     
     from matplotlib import pyplot as plt
-    # for i, x in enumerate(env.video_frames):
-    #     plt.imsave("./imdump/frame-"+str(i)+".jpg",x)
+    for i, x in enumerate(env.video_frames):
+        plt.imsave("./imdump/frame-"+str(i)+".jpg",x)
     
     fig, axs = plt.subplots(3, 1, figsize=(12, 5))
-    axs[0].plot(np.linspace(0, num_eval_steps * env.dt, num_eval_steps), observed_vels[:,0], color='black', linestyle="-", label="Measured x-velocity")
-    axs[0].plot(np.linspace(0, num_eval_steps * env.dt, num_eval_steps), command_vels_array[:,0], color='black', linestyle="--", label="Desired X")
-    axs[1].plot(np.linspace(0, num_eval_steps * env.dt, num_eval_steps), observed_vels[:,1], color='black', linestyle="-", label="Measured y-velocity")
-    axs[1].plot(np.linspace(0, num_eval_steps * env.dt, num_eval_steps), command_vels_array[:,1], color='black', linestyle="--", label="Desired Y")
-    axs[2].plot(np.linspace(0, num_eval_steps * env.dt, num_eval_steps), observed_vels[:,2], color='black', linestyle="-", label="Measured yaw-velocity")
-    axs[2].plot(np.linspace(0, num_eval_steps * env.dt, num_eval_steps), command_vels_array[:,2], color='black', linestyle="--", label="Desired Yaw")
-    # axs[0].legend()
-    # axs[0].set_title("Forward Linear Velocity")
-    # axs[0].set_xlabel("Time (s)")
-    # axs[0].set_ylabel("Velocity (m/s)")
-
-    # axs[1].plot(np.linspace(0, num_eval_steps * env.dt, num_eval_steps), joint_positions, linestyle="-", label="Measured")
-    # axs[1].set_title("Joint Positions")
-    # axs[1].set_xlabel("Time (s)")
-    # axs[1].set_ylabel("Joint Position (rad)")
+    labels = ["X","Y","Yaw"]
+    
+    for i in range(3):
+        axs[i].plot(np.linspace(0, num_eval_steps * env.dt, num_eval_steps), observed_vels[:,i], color='black', linestyle="-", label=f"Measured {labels[i]}-velocity")
+        axs[i].plot(np.linspace(0, num_eval_steps * env.dt, num_eval_steps), command_vels_array[:,i], color='black', linestyle="--", label=f"Desired {labels[i]}")
+        axs[i].set_ylim([-0.5,0.5])
 
     plt.tight_layout()
     plt.show()
