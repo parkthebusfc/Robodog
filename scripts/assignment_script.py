@@ -3,8 +3,7 @@ import isaacgym
 assert isaacgym
 import torch
 import numpy as np
-
-import glob
+import cv2
 import pickle as pkl
 
 from go1_gym.envs import *
@@ -29,9 +28,27 @@ def load_policy(logdir):
     return policy
 
 
+def saveToVideo(frames, output_video_name, frame_rate=25.0, codec='mp4v'):
+    # Get the shape of the first frame to determine video dimensions
+    frame_height, frame_width, _ = frames[0].shape
+
+    # Create a VideoWriter object
+    fourcc = cv2.VideoWriter_fourcc(*codec)
+    out = cv2.VideoWriter(output_video_name, fourcc, frame_rate, (frame_width, frame_height))
+
+    # Loop through the frames and write each frame to the video
+    for frame in frames:
+        # Convert from RGB to BGR (OpenCV uses BGR format)
+        frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        out.write(frame_bgr)
+
+    # Release the VideoWriter
+    out.release()
+
 def load_env(label, headless=False):
-    dirs = glob.glob(f"../runs/{label}/*")
-    logdir = sorted(dirs)[0]
+    # dirs = glob.glob(f"../runs/{label}/*")
+    # logdir = sorted(dirs)[0]
+    logdir = f"../runs/{label}"
 
     with open(logdir + "/parameters.pkl", 'rb') as file:
         pkl_cfg = pkl.load(file)
@@ -135,7 +152,7 @@ def play_go1(headless=True):
     if not os.path.exists("./imdump"):
         os.mkdir("./imdump")
 
-    label = "gait-conditioned-agility/pretrain-v0/train"
+    label = "gait-conditioned-agility/pretrain-v0/train/025417.456545"
 
     env, policy = load_env(label, headless=headless)
 
@@ -159,8 +176,7 @@ def play_go1(headless=True):
             command_vels_array = np.concatenate((command_vels_array,np.tile(np.array(cmd),(steps_each,1))), axis=0)
     
     from matplotlib import pyplot as plt
-    for i, x in enumerate(env.video_frames):
-        plt.imsave("./imdump/frame-"+str(i)+".jpg",x)
+    saveToVideo(env.video_frames, "./imdump/test_video.mp4")
     
     fig, axs = plt.subplots(3, 1, figsize=(12, 5))
     labels = ["X","Y","Yaw"]
@@ -168,10 +184,10 @@ def play_go1(headless=True):
     for i in range(3):
         axs[i].plot(np.linspace(0, num_eval_steps * env.dt, num_eval_steps), observed_vels[:,i], color='black', linestyle="-", label=f"Measured {labels[i]}-velocity")
         axs[i].plot(np.linspace(0, num_eval_steps * env.dt, num_eval_steps), command_vels_array[:,i], color='black', linestyle="--", label=f"Desired {labels[i]}")
-        axs[i].set_ylim([-0.5,0.5])
+        axs[i].set_ylim([-0.6,0.6])
 
     plt.tight_layout()
-    plt.show()
+    plt.savefig("./imdump/plot.png")
 
 
 if __name__ == '__main__':
