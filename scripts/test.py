@@ -9,6 +9,7 @@ from go1_gym.envs import *
 from go1_gym.envs.base.legged_robot_config import Cfg
 from go1_gym.envs.go1.go1_config import config_go1
 from go1_gym.envs.go1.velocity_tracking import VelocityTrackingEasyEnv
+from go1_gym.envs.go1.wall_control import WallControlEnv
 
 
 def run_env(render=False, headless=False):
@@ -169,7 +170,7 @@ def run_env(render=False, headless=False):
 
     # 5 times per second
 
-    Cfg.env.num_envs = 3
+    Cfg.env.num_envs = 1
     Cfg.domain_rand.push_interval_s = 1
     Cfg.terrain.num_rows = 3
     Cfg.terrain.num_cols = 5
@@ -185,7 +186,7 @@ def run_env(render=False, headless=False):
     Cfg.domain_rand.randomize_lag_timesteps = True
     Cfg.control.control_type = "actuator_net"
 
-    env = VelocityTrackingEasyEnv(sim_device='cuda:0', headless=False, cfg=Cfg)
+    env = WallControlEnv(sim_device='cuda:0', headless=False, cfg=Cfg)
     env.reset()
 
     if render and headless:
@@ -196,7 +197,7 @@ def run_env(render=False, headless=False):
         exit()
 
     for i in trange(1000, desc="Running"):
-        actions = 0. * torch.ones(env.num_envs, env.num_actions, device=env.device)
+        actions = 0 * torch.ones(env.num_envs, env.num_actions, device=env.device)
         obs, rew, done, info = env.step(actions)
 
     print("Done")

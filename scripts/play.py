@@ -11,6 +11,7 @@ from go1_gym.envs import *
 from go1_gym.envs.base.legged_robot_config import Cfg
 from go1_gym.envs.go1.go1_config import config_go1
 from go1_gym.envs.go1.velocity_tracking import VelocityTrackingEasyEnv
+from go1_gym.envs.go1.wall_control import WallControlEnv
 
 from tqdm import tqdm
 
@@ -122,6 +123,7 @@ def play_go1(headless=True):
     for i in tqdm(range(num_eval_steps)):
         with torch.no_grad():
             actions = policy(obs)
+        print(actions.shape)
         env.commands[:, 0] = x_vel_cmd
         env.commands[:, 1] = y_vel_cmd
         env.commands[:, 2] = yaw_vel_cmd

@@ -119,6 +119,7 @@ class LeggedRobot(BaseTask):
         # compute observations, rewards, resets, ...
         self.check_termination()
         self.compute_reward()
+        print(" -- > Reset_buff ", self.reset_buf)
         env_ids = self.reset_buf.nonzero(as_tuple=False).flatten()
         self.reset_idx(env_ids)
         self.compute_observations()
@@ -138,12 +139,13 @@ class LeggedRobot(BaseTask):
     def check_termination(self):
         """ Check if environments need to be reset
         """
+        print(self.contact_forces.shape)
         self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1.,
                                    dim=1)
         self.time_out_buf = self.episode_length_buf > self.cfg.env.max_episode_length  # no terminal reward for time-outs
         self.reset_buf |= self.time_out_buf
         if self.cfg.rewards.use_terminal_body_height:
-            self.body_height_buf = torch.mean(self.root_states[:, 2].unsqueeze(1) - self.measured_heights, dim=1) \
+            self.body_height_buf = torch.mean(self.root_states[:1, 2].unsqueeze(1) - self.measured_heights, dim=1) \
                                    < self.cfg.rewards.terminal_body_height
             self.reset_buf = torch.logical_or(self.body_height_buf, self.reset_buf)
 
@@ -715,6 +717,7 @@ class LeggedRobot(BaseTask):
         ep_len = min(self.cfg.env.max_episode_length, timesteps)
 
         # update curricula based on terminated environment bins and categories
+        print(env_ids)
         for i, (category, curriculum) in enumerate(zip(self.category_names, self.curricula)):
             env_ids_in_category = self.env_command_categories[env_ids.cpu()] == i
             if isinstance(env_ids_in_category, np.bool_) or len(env_ids_in_category) == 1:

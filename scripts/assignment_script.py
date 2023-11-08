@@ -3,6 +3,7 @@ import isaacgym
 assert isaacgym
 import torch
 import numpy as np
+import os
 import cv2
 import pickle as pkl
 
@@ -10,6 +11,7 @@ from go1_gym.envs import *
 from go1_gym.envs.base.legged_robot_config import Cfg
 from go1_gym.envs.go1.go1_config import config_go1
 from go1_gym.envs.go1.velocity_tracking import VelocityTrackingEasyEnv
+from go1_gym.envs.go1.wall_control import WallControlEnv
 
 from tqdm import tqdm
 
@@ -48,7 +50,7 @@ def saveToVideo(frames, output_video_name, frame_rate=25.0, codec='mp4v'):
 def load_env(label, headless=False):
     # dirs = glob.glob(f"../runs/{label}/*")
     # logdir = sorted(dirs)[0]
-    logdir = f"../runs/{label}"
+    logdir = os.path.join(os.path.abspath(os.path.dirname(__file__)),f"../runs/{label}")
 
     with open(logdir + "/parameters.pkl", 'rb') as file:
         pkl_cfg = pkl.load(file)
@@ -92,7 +94,7 @@ def load_env(label, headless=False):
 
     from go1_gym.envs.wrappers.history_wrapper import HistoryWrapper
 
-    env = VelocityTrackingEasyEnv(sim_device='cuda:0', headless=headless, cfg=Cfg)
+    env = WallControlEnv(sim_device='cuda:0', headless=headless, cfg=Cfg)
     env = HistoryWrapper(env)
 
     # load policy
@@ -152,7 +154,7 @@ def play_go1(headless=True):
     if not os.path.exists("./imdump"):
         os.mkdir("./imdump")
 
-    label = "gait-conditioned-agility/pretrain-v0/train/025417.456545"
+    label = "gait-conditioned-agility/195054.190882"
 
     env, policy = load_env(label, headless=headless)
 
@@ -192,4 +194,4 @@ def play_go1(headless=True):
 
 if __name__ == '__main__':
     # to see the environment rendering, set headless=False
-    play_go1(headless=True)
+    play_go1(headless=False)
