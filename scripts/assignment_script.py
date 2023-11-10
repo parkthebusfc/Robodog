@@ -154,7 +154,7 @@ def play_go1(headless=True):
     if not os.path.exists("./imdump"):
         os.mkdir("./imdump")
 
-    label = "gait-conditioned-agility/195054.190882"
+    label = "gait-conditioned-agility/pretrain-v0/train/025417.456545"
 
     env, policy = load_env(label, headless=headless)
 
@@ -164,8 +164,8 @@ def play_go1(headless=True):
 
     observed_vels = None
     command_vels_array = None
-    steps_each = 50
-    command_vels = [[0.4,0,0],[0,0.3,0],[-0.3,0,0],[0,-0.5,0],[0,0,0.25]]
+    steps_each = 1000
+    command_vels = [[0,0.5,0]]
     num_eval_steps = 0
     for cmd in command_vels:
         obs_vel = dog_walk(env,policy, obs, steps_each, *cmd)

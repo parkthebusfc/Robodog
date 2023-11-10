@@ -1,5 +1,5 @@
 from go1_gym.envs.go1.velocity_tracking import VelocityTrackingEasyEnv
-from isaacgym import gymutil, gymapi
+from isaacgym import gymtorch, gymapi, gymutil
 import torch
 from params_proto import Meta
 from typing import Union
@@ -7,6 +7,7 @@ from go1_gym import MINI_GYM_ROOT_DIR
 from go1_gym.utils.terrain import Terrain
 import os
 from isaacgym.torch_utils import *
+import math
 
 from go1_gym.envs.base.legged_robot_config import Cfg
 
@@ -85,15 +86,29 @@ class WallControlEnv(VelocityTrackingEasyEnv):
         self._call_train_eval(self._randomize_rigid_body_props, torch.arange(self.num_envs, device=self.device))
         self._randomize_gravity()
 
-        wall_asset_options = gymapi.AssetOptions()
-        wall_asset_options.use_mesh_materials = True
-        wall_asset_options.disable_gravity = True
-        wall_asset_options.fix_base_link = True
-        wall_asset = self.gym.create_box(self.sim, 0.12,4,4, wall_asset_options)
-        wall_rigid_shape_props = self.gym.get_asset_rigid_shape_properties(self.robot_asset)
-        wall_dof_props = self.gym.get_asset_dof_properties(self.robot_asset)
-        self.wall_handles = []
 
+        def make_wall(env_handle, start_pose, dimensions, env_num, wall_id):
+            wall_asset_options = gymapi.AssetOptions()
+            wall_asset_options.use_mesh_materials = True
+            wall_asset_options.disable_gravity = True
+            wall_asset_options.fix_base_link = True
+            wall_asset = self.gym.create_box(self.sim, *dimensions, wall_asset_options)
+            wall_rigid_shape_props = self.gym.get_asset_rigid_shape_properties(self.robot_asset)
+            wall_dof_props = self.gym.get_asset_dof_properties(self.robot_asset)
+            rigid_shape_props = self._process_rigid_shape_props(wall_rigid_shape_props, env_num)
+            self.gym.set_asset_rigid_shape_properties(wall_asset, rigid_shape_props)
+            wall_handle = self.gym.create_actor(env_handle, wall_asset, start_pose , f"wall_{wall_id}", env_num,
+                                                  self.cfg.asset.self_collisions, 0)
+            dof_props = self._process_dof_props(wall_dof_props, env_num)
+            self.gym.set_actor_dof_properties(env_handle, wall_handle, dof_props)
+            body_props = self.gym.get_actor_rigid_body_properties(env_handle, wall_handle)
+            body_props = self._process_rigid_body_props(body_props, env_num)
+            self.gym.set_actor_rigid_body_properties(env_handle, wall_handle, body_props, recomputeInertia=True)
+            return wall_handle
+
+
+
+        self.wall_handles = []
 
         for i in range(self.num_envs):
             # create env instance
@@ -117,22 +132,35 @@ class WallControlEnv(VelocityTrackingEasyEnv):
             body_props = self._process_rigid_body_props(body_props, i)
             self.gym.set_actor_rigid_body_properties(env_handle, anymal_handle, body_props, recomputeInertia=True)
 
-            ## Adding Box
-            rigid_shape_props = self._process_rigid_shape_props(wall_rigid_shape_props, i)
-            self.gym.set_asset_rigid_shape_properties(wall_asset, rigid_shape_props)
-            wall_handle = self.gym.create_actor(env_handle, wall_asset, start_pose, "wall_0", i,
-                                                  self.cfg.asset.self_collisions, 0)
-            dof_props = self._process_dof_props(wall_dof_props, i)
-            self.gym.set_actor_dof_properties(env_handle, wall_handle, dof_props)
-            body_props = self.gym.get_actor_rigid_body_properties(env_handle, wall_handle)
-            body_props = self._process_rigid_body_props(body_props, i)
-            self.gym.set_actor_rigid_body_properties(env_handle, wall_handle, body_props, recomputeInertia=True)
+            ## Adding walls
+            offset = [
+                (1.5,1,1),
+                (3.5,0,1),
+                (1.5,-1,1),
+                (-0.5,0,1),
+            ]
+            dimensions = [
+                (4,0.12,2.0),
+                (0.12,2.0,2.0),
+                (4.0,0.12,2.0),
+                (0.12,2.0,2.0),
+            ]
             
+            for j in range(4):
+                ofs = gymapi.Vec3(*offset[j])
+                dim = dimensions[j]
+
+                tmp_pose = gymapi.Transform()
+                tmp_pose.p = start_pose.p + ofs 
+
+                wall_handle = make_wall(env_handle, tmp_pose, dim, i,j) 
+                self.wall_handles.append(wall_handle)
+
 
             self.envs.append(env_handle)
             self.actor_handles.append(anymal_handle)
-            self.wall_handles.append(wall_handle)
-
+        
+        self.num_actors_per_env = (len(self.actor_handles) + len(self.wall_handles)) // self.num_envs
         self.feet_indices = torch.zeros(len(feet_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(feet_names)):
             self.feet_indices[i] = self.gym.find_actor_rigid_body_handle(self.envs[0], self.actor_handles[0],
@@ -171,7 +199,66 @@ class WallControlEnv(VelocityTrackingEasyEnv):
         self.complete_video_frames = []
         self.complete_video_frames_eval = []
 
-    def _reset_root_states(self, env_ids, cfg):
-        super()._reset_root_states(env_ids, cfg)
 
-        print(self.gym.acquire_actor_root_state_tensor(self.sim))
+    def _reset_root_states(self, env_ids, cfg):
+        """ Resets ROOT states position and velocities of selected environmments
+            Sets base position based on the curriculum
+            Selects randomized base velocities within -0.5:0.5 [m/s, rad/s]
+        Args:
+            env_ids (List[int]): Environemnt ids
+        """
+        print("Num Actors: ",self.num_actors_per_env)
+        ### Transform of robot which is the first actor of each environment
+        # base position 
+        if self.custom_origins:
+            self.root_states[self.num_actors_per_env * env_ids] = self.base_init_state
+            self.root_states[self.num_actors_per_env * env_ids, :3] += self.env_origins[env_ids]
+            self.root_states[self.num_actors_per_env * env_ids, 0:1] += torch_rand_float(-cfg.terrain.x_init_range,
+                                                               cfg.terrain.x_init_range, (len(env_ids), 1),
+                                                               device=self.device)
+            self.root_states[self.num_actors_per_env * env_ids, 1:2] += torch_rand_float(-cfg.terrain.y_init_range,
+                                                               cfg.terrain.y_init_range, (len(env_ids), 1),
+                                                               device=self.device)
+            self.root_states[self.num_actors_per_env * env_ids, 0] += cfg.terrain.x_init_offset
+            self.root_states[self.num_actors_per_env * env_ids, 1] += cfg.terrain.y_init_offset
+        else:
+            self.root_states[self.num_actors_per_env * env_ids] = self.base_init_state
+            self.root_states[self.num_actors_per_env * env_ids, :3] += self.env_origins[env_ids]
+        
+        # base yaws
+        init_yaws = torch_rand_float(-cfg.terrain.yaw_init_range,
+                                     cfg.terrain.yaw_init_range, (len(env_ids), 1),
+                                     device=self.device)
+        quat = quat_from_angle_axis(init_yaws, torch.Tensor([0, 0, 1]).to(self.device))[:, 0, :]
+        self.root_states[self.num_actors_per_env * env_ids, 3:7] = quat
+
+        # base velocities
+        self.root_states[self.num_actors_per_env * env_ids, 7:13] = torch_rand_float(-0.5, 0.5, (len(env_ids), 6),
+                                                           device=self.device)  # [7:10]: lin vel, [10:13]: ang vel
+
+        env_ids_int32 = torch.arange(self.root_states.shape[0], dtype=torch.int32, device=env_ids.device)
+
+        
+        status = self.gym.set_actor_root_state_tensor_indexed(self.sim,
+                                                     gymtorch.unwrap_tensor(self.root_states),
+                                                     gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
+        if not status:
+            raise SystemError("Could not set necessary transforms")
+        if cfg.env.record_video:
+            bx, by, bz = self.root_states[0, 0], self.root_states[0, 1], self.root_states[0, 2]
+            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx, by - 4.0, bz + 3.0),
+                                         gymapi.Vec3(bx, by, bz))
+
+        if cfg.env.record_video and 0 in env_ids:
+            if self.complete_video_frames is None:
+                self.complete_video_frames = []
+            else:
+                self.complete_video_frames = self.video_frames[:]
+            self.video_frames = []
+
+        if cfg.env.record_video and self.eval_cfg is not None and self.num_train_envs in env_ids:
+            if self.complete_video_frames_eval is None:
+                self.complete_video_frames_eval = []
+            else:
+                self.complete_video_frames_eval = self.video_frames_eval[:]
+            self.video_frames_eval = []
