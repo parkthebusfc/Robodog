@@ -39,7 +39,7 @@ class Navigator(VelocityTrackingEasyEnv):
     def _resample_commands(self, env_ids):
         self.commands[env_ids, 3] = self.behavior["body_height"]
         self.commands[env_ids, 4] = self.behavior["step_frequency"]
-        self.commands[env_ids, 5:8] =self.behavior["gait"]
+        self.commands[env_ids, 5:8] =self.behavior["gait"].to(self.commands.device)
         self.commands[env_ids, 8] = self.behavior["durations"]
         self.commands[env_ids, 9] = self.behavior["footswing_height"]
         self.commands[env_ids, 10] = self.behavior["pitch"]

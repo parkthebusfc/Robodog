@@ -204,7 +204,28 @@ class World(Navigator):
         self.video_frames_eval = []
         self.complete_video_frames = []
         self.complete_video_frames_eval = []
-    
+
+    def reset_idx(self, env_ids):
+        super().reset_idx(env_ids)
+
+        self.extras = {}
+        train_env_ids = env_ids[env_ids < self.num_train_envs]
+        if len(train_env_ids) > 0:
+            self.extras["train/episode"] = {}
+            for key in self.episode_sums.keys():
+                self.extras["train/episode"]['rew_' + key] = torch.mean(
+                    self.episode_sums[key][train_env_ids])
+                self.episode_sums[key][train_env_ids] = 0.
+        eval_env_ids = env_ids[env_ids >= self.num_train_envs]
+        if len(eval_env_ids) > 0:
+            self.extras["eval/episode"] = {}
+            for key in self.episode_sums.keys():
+                # save the evaluation rollout result if not already saved
+                unset_eval_envs = eval_env_ids[self.episode_sums_eval[key][eval_env_ids] == -1]
+                self.episode_sums_eval[key][unset_eval_envs] = self.episode_sums[key][unset_eval_envs]
+                self.episode_sums[key][eval_env_ids] = 0.
+        self.extras["time_outs"] = self.time_out_buf[:self.num_train_envs]
+
     def _reset_root_states(self, env_ids, cfg):
         """ Resets ROOT states position and velocities of selected environmments
             Sets base position based on the curriculum
@@ -273,11 +294,31 @@ class World(Navigator):
         self.rew_buf[:] = 0
         env_ids = torch.arange(self.num_envs)
         self.rew_buf = (self.root_states[self.num_actors_per_env * env_ids,0:1] - self.goals[:,0:1])[:,0]
-        self.rew_buf -= 2 * torch.abs(self.init_root_states[:,1] - self.root_states[self.num_actors_per_env* env_ids, ])
+        self.rew_buf -= 2 * torch.abs(self.init_root_states[:,1] - self.root_states[self.num_actors_per_env* env_ids, 1])
         self.rew_buf += -10 * self.time_out_buf
+
+        self.episode_sums["goal_reward"] += (self.root_states[self.num_actors_per_env * env_ids,0:1] - self.goals[:,0:1])[:,0]
+        self.episode_sums["wall_penalty"] += -2 * torch.abs(self.init_root_states[:,1] - self.root_states[self.num_actors_per_env* env_ids, ])
+        self.episode_sums["timeout_penalty"] += -10 * self.time_out_buf
+        self.episode_sums["total"] += self.rew_buf
 
     def check_termination(self):
         self.time_out_buf = self.episode_length_buf > self.cfg.env.max_episode_length
         self.reset_buf = self.time_out_buf
         env_ids = torch.arange(self.num_envs)
         self.reset_buf |= (self.root_states[self.num_actors_per_env * env_ids, 0] > self.goals[:, 0])
+
+    def _prepare_reward_function(self):
+        self.episode_sums = {
+            name: torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
+            for name in ["goal_reward","wall_penalty","timeout_penalty","total"]
+        }
+
+    def _parse_cfg(self, cfg):
+        self.dt = self.cfg.control.decimation * self.sim_params.dt
+        cfg.env.episode_length_s = 750 * self.dt
+        super()._parse_cfg(cfg)
+
+        
+
+        
