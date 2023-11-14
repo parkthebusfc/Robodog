@@ -11,11 +11,11 @@ def train_go1(headless=True):
 
     from ml_logger import logger
 
-    from go1_gym_learn.ppo_cse import Runner
+    from go1_gym_learn.ppo_nav import Runner
     from go1_gym.envs.wrappers.history_wrapper import HistoryWrapper
-    from go1_gym_learn.ppo_cse.actor_critic import AC_Args
-    from go1_gym_learn.ppo_cse.ppo import PPO_Args
-    from go1_gym_learn.ppo_cse import RunnerArgs
+    from go1_gym_learn.ppo_nav.actor_critic import AC_Args
+    from go1_gym_learn.ppo_nav.ppo import PPO_Args
+    from go1_gym_learn.ppo_nav import RunnerArgs
 
     config_go1(Cfg)
     Cfg.env.num_envs = 1

@@ -530,7 +530,6 @@ class LeggedRobot(BaseTask):
 
     # ------------- Callbacks --------------
     def _call_train_eval(self, func, env_ids):
-
         env_ids_train = env_ids[env_ids < self.num_train_envs]
         env_ids_eval = env_ids[env_ids >= self.num_train_envs]
 
