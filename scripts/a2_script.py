@@ -11,7 +11,7 @@ from go1_gym.envs import *
 from go1_gym.envs.base.legged_robot_config import Cfg
 from go1_gym.envs.go1.go1_config import config_go1
 from go1_gym.envs.go1.velocity_tracking import VelocityTrackingEasyEnv
-from go1_gym.envs.go1.wall_control import WallControlEnv
+from go1_gym.envs.go1.world import World
 
 from tqdm import tqdm
 
@@ -94,7 +94,7 @@ def load_env(label, headless=False):
 
     from go1_gym.envs.wrappers.history_wrapper import HistoryWrapper
 
-    env = WallControlEnv(sim_device='cuda:0', headless=headless, cfg=Cfg, locomtion_model_dir=logdir)
+    env = World(sim_device='cuda:0', headless=headless, cfg=Cfg, locomtion_model_dir=logdir)
     # env = HistoryWrapper(env)
 
     # load policy
@@ -133,6 +133,7 @@ def dog_walk(env,policy, obs, num_eval_steps, x_vel_cmd, y_vel_cmd, yaw_vel_cmd)
         env.commands[:, 11] = roll_cmd
         env.commands[:, 12] = stance_width_cmd
         obs, rew, done, info = env.step(torch.Tensor([x_vel_cmd, y_vel_cmd, yaw_vel_cmd]))
+        print("Just a placeholder")
         # measured_vels[i,:] = env.base_lin_vel[0, :].cpu()
 
     
@@ -158,7 +159,7 @@ def play_go1(headless=True):
     observed_vels = None
     command_vels_array = None
     steps_each = 1000
-    command_vels = [[0,0.5,0]]
+    command_vels = [[0,0.0,0]]
     num_eval_steps = 0
     for cmd in command_vels:
         obs_vel = dog_walk(env,policy, obs, steps_each, *cmd)

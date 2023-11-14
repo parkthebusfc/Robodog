@@ -9,7 +9,7 @@ from go1_gym.envs import *
 from go1_gym.envs.base.legged_robot_config import Cfg
 from go1_gym.envs.go1.go1_config import config_go1
 from go1_gym.envs.go1.velocity_tracking import VelocityTrackingEasyEnv
-from go1_gym.envs.go1.wall_control import WallControlEnv
+from go1_gym.envs.go1.world import World
 
 
 def run_env(render=False, headless=False):
@@ -186,7 +186,7 @@ def run_env(render=False, headless=False):
     Cfg.domain_rand.randomize_lag_timesteps = True
     Cfg.control.control_type = "actuator_net"
 
-    env = WallControlEnv(sim_device='cuda:0', headless=False, cfg=Cfg)
+    env = World(sim_device='cuda:0', headless=False, cfg=Cfg)
     env.reset()
 
     if render and headless:
