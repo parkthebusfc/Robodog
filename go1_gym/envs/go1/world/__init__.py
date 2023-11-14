@@ -272,4 +272,10 @@ class World(Navigator):
         self.rew_buf[:] = 0
         env_ids = torch.arange(self.num_envs)
         self.rew_buf = (self.root_states[self.num_actors_per_env * env_ids,0:1] - self.goals[:,0:1])[:,0]
-        print("Called from world")
+        self.rew_buf += -10 * self.time_out_buf
+
+    def check_termination(self):
+        self.time_out_buf = self.episode_length_buf > self.cfg.env.max_episode_length
+        self.reset_buf = self.time_out_buf
+        env_ids = torch.arange(self.num_envs)
+        self.reset_buf |= (self.root_states[self.num_actors_per_env * env_ids, 0] > self.goals[:, 0])
