@@ -19,6 +19,7 @@ class World(Navigator):
         self.num_actions = 3
 
     def update_goals(self, env_ids):
+        self.init_root_states = self.root_states[self.num_actors_per_env * env_ids, :3]
         self.goals = self.root_states[self.num_actors_per_env * env_ids, :3]
         self.goals[:, 0:1] += 3 * torch.ones((len(env_ids), 1)).to(self.goals.device)
         print("Computed Goals!")
@@ -272,6 +273,7 @@ class World(Navigator):
         self.rew_buf[:] = 0
         env_ids = torch.arange(self.num_envs)
         self.rew_buf = (self.root_states[self.num_actors_per_env * env_ids,0:1] - self.goals[:,0:1])[:,0]
+        self.rew_buf -= 2 * torch.abs(self.init_root_states[:,1] - self.root_states[self.num_actors_per_env* env_ids, ])
         self.rew_buf += -10 * self.time_out_buf
 
     def check_termination(self):
