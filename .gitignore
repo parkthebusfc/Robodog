@@ -68,3 +68,6 @@ docker/rsc
 *.jit
 tmp
 *.tar
+
+
+scripts/imdump/*

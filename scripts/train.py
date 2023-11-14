@@ -142,6 +142,7 @@ def train_go1(headless=True):
     Cfg.reward_scales.tracking_contacts_shaped_force = 4.0
     Cfg.reward_scales.tracking_contacts_shaped_vel = 4.0
     Cfg.reward_scales.collision = -5.0
+    Cfg.reward_scales.tracking_ang_vel = 1.0 ## Added to fix yaw 
 
     Cfg.rewards.reward_container_name = "CoRLRewards"
     Cfg.rewards.only_positive_rewards = False
@@ -165,9 +166,9 @@ def train_go1(headless=True):
     Cfg.commands.stance_width_range = [0.10, 0.45]
     Cfg.commands.stance_length_range = [0.35, 0.45]
 
-    Cfg.commands.limit_vel_x = [-5.0, 5.0]
-    Cfg.commands.limit_vel_y = [-0.6, 0.6]
-    Cfg.commands.limit_vel_yaw = [-5.0, 5.0]
+    Cfg.commands.limit_vel_x = [-0.5, 0.5]
+    Cfg.commands.limit_vel_y = [-0.5, 0.5]
+    Cfg.commands.limit_vel_yaw = [-0.5, 0.5]
     Cfg.commands.limit_body_height = [-0.25, 0.15]
     Cfg.commands.limit_gait_frequency = [2.0, 4.0]
     Cfg.commands.limit_gait_phase = [0.0, 1.0]
@@ -211,7 +212,7 @@ def train_go1(headless=True):
                       Cfg=vars(Cfg))
 
     env = HistoryWrapper(env)
-    gpu_id = 0
+    gpu_id = 6
     runner = Runner(env, device=f"cuda:{gpu_id}")
     runner.learn(num_learning_iterations=100000, init_at_random_ep_len=True, eval_freq=100)
 
