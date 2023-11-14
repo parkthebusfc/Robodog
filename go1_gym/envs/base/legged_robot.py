@@ -100,7 +100,7 @@ class LeggedRobot(BaseTask):
             self.gym.render_all_camera_sensors(self.sim)
 
         self.episode_length_buf += 1
-        self.common_step_counter += 1
+        self.common_step_counter += 1   
 
         # prepare quantities
         self.base_pos[:] = self.root_states[:self.num_envs, 0:3]
@@ -265,6 +265,7 @@ class LeggedRobot(BaseTask):
             Calls each reward function which had a non-zero scale (processed in self._prepare_reward_function())
             adds each terms to the episode sums and to the total reward
         """
+        print("Called from Velocity Tracking")
         self.rew_buf[:] = 0.
         self.rew_buf_pos[:] = 0.
         self.rew_buf_neg[:] = 0.
@@ -529,7 +530,6 @@ class LeggedRobot(BaseTask):
 
     # ------------- Callbacks --------------
     def _call_train_eval(self, func, env_ids):
-
         env_ids_train = env_ids[env_ids < self.num_train_envs]
         env_ids_eval = env_ids[env_ids >= self.num_train_envs]
 
@@ -718,6 +718,8 @@ class LeggedRobot(BaseTask):
         print(env_ids)
         for i, (category, curriculum) in enumerate(zip(self.category_names, self.curricula)):
             env_ids_in_category = self.env_command_categories[env_ids.cpu()] == i
+
+            ##Changer 1 to 0 here
             if isinstance(env_ids_in_category, np.bool_) or len(env_ids_in_category) == 1:
                 env_ids_in_category = torch.tensor([env_ids_in_category], dtype=torch.bool)
             elif len(env_ids_in_category) == 0:
@@ -1007,6 +1009,9 @@ class LeggedRobot(BaseTask):
                                          gymapi.Vec3(bx, by, bz))
 
         if cfg.env.record_video and 0 in env_ids:
+            bx, by, bz = self.root_states[0, 0], self.root_states[0, 1], self.root_states[0, 2]
+            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx, by - 3.0, bz + 3.0),
+                                         gymapi.Vec3(bx, by, bz))
             if self.complete_video_frames is None:
                 self.complete_video_frames = []
             else:

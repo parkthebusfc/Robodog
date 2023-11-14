@@ -16,6 +16,13 @@ class World(Navigator):
                  cfg: Cfg = None, eval_cfg: Cfg = None, initial_dynamics_dict=None, physics_engine="SIM_PHYSX", locomtion_model_dir = "gait-conditioned-agility/pretrain-v0/train/025417.456545"):
         super().__init__(sim_device, headless, num_envs, prone,deploy,cfg,eval_cfg,initial_dynamics_dict,physics_engine, locomtion_model_dir=locomtion_model_dir)
 
+        self.num_actions = 3
+
+    def update_goals(self, env_ids):
+        self.goals = self.root_states[self.num_actors_per_env * env_ids, :3]
+        self.goals[:, 0:1] += 3 * torch.ones((len(env_ids), 1)).to(self.goals.device)
+        print("Computed Goals!")
+
     def _create_envs(self):
         """ Creates environments:
              1. loads the robot URDF/MJCF asset,
@@ -105,9 +112,7 @@ class World(Navigator):
             body_props = self._process_rigid_body_props(body_props, env_num)
             self.gym.set_actor_rigid_body_properties(env_handle, wall_handle, body_props, recomputeInertia=True)
             return wall_handle
-
-
-
+        
         self.wall_handles = []
 
         for i in range(self.num_envs):
@@ -224,6 +229,7 @@ class World(Navigator):
             self.root_states[self.num_actors_per_env * env_ids] = self.base_init_state
             self.root_states[self.num_actors_per_env * env_ids, :3] += self.env_origins[env_ids]
         
+        self.update_goals(env_ids)
         # base yaws
         init_yaws = torch_rand_float(-cfg.terrain.yaw_init_range,
                                      cfg.terrain.yaw_init_range, (len(env_ids), 1),
@@ -261,7 +267,10 @@ class World(Navigator):
             else:
                 self.complete_video_frames_eval = self.video_frames_eval[:]
             self.video_frames_eval = []
-
-
-
+    
+    def compute_reward(self):
+        self.rew_buf[:] = 0
+        env_ids = torch.arange(self.num_envs)
+        self.rew_buf = (self.root_states[self.num_actors_per_env * env_ids,0:1] - self.goals[:,0:1])[:,0]
+        print("Called from world")
 

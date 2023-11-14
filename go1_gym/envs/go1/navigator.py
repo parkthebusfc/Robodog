@@ -44,8 +44,11 @@ class Navigator(VelocityTrackingEasyEnv):
     def velocity_step(self, actions):
         return super().step(actions=actions)
 
-    def get_locomotion_observations(self):
-        obs = self.get_observations()
+    def get_observation_buffer(self):
+        return self.obs_buf
+
+    def get_observations(self):
+        obs = self.get_observation_buffer()
         privileged_obs = self.get_privileged_observations()
         self.obs_history = torch.cat((self.obs_history[:, self.num_obs:], obs), dim=-1)
         return {'obs': obs, 'privileged_obs': privileged_obs, 'obs_history': self.obs_history}
@@ -55,7 +58,7 @@ class Navigator(VelocityTrackingEasyEnv):
         # Our step function takes these cmds and passes it through the locomotion policy, applies the computed torques, computes observations, rewards and so on
         self.commands[:, :3] = cmd
         
-        obs = self.get_locomotion_observations()
+        obs = self.get_observations()
         locomotion_actions = self.locomotion_policy(obs)
         obs, rew, done, info = self.velocity_step(locomotion_actions)
         privileged_obs = info["privileged_obs"]

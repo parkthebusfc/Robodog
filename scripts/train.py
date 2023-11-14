@@ -6,18 +6,19 @@ def train_go1(headless=True):
 
     from go1_gym.envs.base.legged_robot_config import Cfg
     from go1_gym.envs.go1.go1_config import config_go1
-    from go1_gym.envs.go1.velocity_tracking import VelocityTrackingEasyEnv
+
+    from go1_gym.envs.go1.world import World
 
     from ml_logger import logger
 
-    from go1_gym_learn.ppo_cse import Runner
+    from go1_gym_learn.ppo_nav import Runner
     from go1_gym.envs.wrappers.history_wrapper import HistoryWrapper
-    from go1_gym_learn.ppo_cse.actor_critic import AC_Args
-    from go1_gym_learn.ppo_cse.ppo import PPO_Args
-    from go1_gym_learn.ppo_cse import RunnerArgs
+    from go1_gym_learn.ppo_nav.actor_critic import AC_Args
+    from go1_gym_learn.ppo_nav.ppo import PPO_Args
+    from go1_gym_learn.ppo_nav import RunnerArgs
 
     config_go1(Cfg)
-    Cfg.env.num_envs = 4096
+    Cfg.env.num_envs = 1
     Cfg.commands.num_lin_vel_bins = 30
     Cfg.commands.num_ang_vel_bins = 30
     Cfg.curriculum_thresholds.tracking_ang_vel = 0.7
@@ -142,6 +143,7 @@ def train_go1(headless=True):
     Cfg.reward_scales.tracking_contacts_shaped_force = 4.0
     Cfg.reward_scales.tracking_contacts_shaped_vel = 4.0
     Cfg.reward_scales.collision = -5.0
+    Cfg.reward_scales.tracking_ang_vel = 1.0 ## Added to fix yaw 
 
     Cfg.rewards.reward_container_name = "CoRLRewards"
     Cfg.rewards.only_positive_rewards = False
@@ -165,9 +167,9 @@ def train_go1(headless=True):
     Cfg.commands.stance_width_range = [0.10, 0.45]
     Cfg.commands.stance_length_range = [0.35, 0.45]
 
-    Cfg.commands.limit_vel_x = [-5.0, 5.0]
-    Cfg.commands.limit_vel_y = [-0.6, 0.6]
-    Cfg.commands.limit_vel_yaw = [-5.0, 5.0]
+    Cfg.commands.limit_vel_x = [-0.5, 0.5]
+    Cfg.commands.limit_vel_y = [-0.5, 0.5]
+    Cfg.commands.limit_vel_yaw = [-0.5, 0.5]
     Cfg.commands.limit_body_height = [-0.25, 0.15]
     Cfg.commands.limit_gait_frequency = [2.0, 4.0]
     Cfg.commands.limit_gait_phase = [0.0, 1.0]
@@ -204,13 +206,12 @@ def train_go1(headless=True):
     Cfg.commands.binary_phases = True
     Cfg.commands.gaitwise_curricula = True
 
-    env = VelocityTrackingEasyEnv(sim_device='cuda:0', headless=headless, cfg=Cfg)
-
+    import os
+    env = World(sim_device='cuda:0',headless=headless, cfg=Cfg, locomtion_model_dir=os.path.join(os.path.dirname(__file__), "../runs/gait-conditioned-agility/pretrain-v0/train/025417.456545"))
     # log the experiment parameters
     logger.log_params(AC_Args=vars(AC_Args), PPO_Args=vars(PPO_Args), RunnerArgs=vars(RunnerArgs),
                       Cfg=vars(Cfg))
 
-    env = HistoryWrapper(env)
     gpu_id = 0
     runner = Runner(env, device=f"cuda:{gpu_id}")
     runner.learn(num_learning_iterations=100000, init_at_random_ep_len=True, eval_freq=100)
