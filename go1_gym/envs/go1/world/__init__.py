@@ -18,6 +18,11 @@ class World(Navigator):
 
         self.num_actions = 3
 
+    def update_goals(self, env_ids):
+        self.goals = self.root_states[self.num_actors_per_env * env_ids, :3]
+        self.goals[:, 0:1] += 3 * torch.ones((len(env_ids), 1)).to(self.goals.device)
+        print("Computed Goals!")
+
     def _create_envs(self):
         """ Creates environments:
              1. loads the robot URDF/MJCF asset,
@@ -107,9 +112,7 @@ class World(Navigator):
             body_props = self._process_rigid_body_props(body_props, env_num)
             self.gym.set_actor_rigid_body_properties(env_handle, wall_handle, body_props, recomputeInertia=True)
             return wall_handle
-
-
-
+        
         self.wall_handles = []
 
         for i in range(self.num_envs):
@@ -226,6 +229,7 @@ class World(Navigator):
             self.root_states[self.num_actors_per_env * env_ids] = self.base_init_state
             self.root_states[self.num_actors_per_env * env_ids, :3] += self.env_origins[env_ids]
         
+        self.update_goals(env_ids)
         # base yaws
         init_yaws = torch_rand_float(-cfg.terrain.yaw_init_range,
                                      cfg.terrain.yaw_init_range, (len(env_ids), 1),
