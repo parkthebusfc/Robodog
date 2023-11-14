@@ -1,4 +1,4 @@
-from go1_gym.envs.go1.velocity_tracking import VelocityTrackingEasyEnv
+from go1_gym.envs.go1.navigator import Navigator
 from isaacgym import gymtorch, gymapi, gymutil
 import torch
 from params_proto import Meta
@@ -11,10 +11,10 @@ import math
 
 from go1_gym.envs.base.legged_robot_config import Cfg
 
-class WallControlEnv(VelocityTrackingEasyEnv):
+class World(Navigator):
     def __init__(self, sim_device, headless, num_envs=None, prone=False, deploy=False,
-                 cfg: Cfg = None, eval_cfg: Cfg = None, initial_dynamics_dict=None, physics_engine="SIM_PHYSX"):
-        super().__init__(sim_device, headless, num_envs, prone,deploy,cfg, eval_cfg,initial_dynamics_dict,physics_engine)
+                 cfg: Cfg = None, eval_cfg: Cfg = None, initial_dynamics_dict=None, physics_engine="SIM_PHYSX", locomtion_model_dir = "gait-conditioned-agility/pretrain-v0/train/025417.456545"):
+        super().__init__(sim_device, headless, num_envs, prone,deploy,cfg,eval_cfg,initial_dynamics_dict,physics_engine, locomtion_model_dir=locomtion_model_dir)
 
     def _create_envs(self):
         """ Creates environments:
@@ -198,8 +198,7 @@ class WallControlEnv(VelocityTrackingEasyEnv):
         self.video_frames_eval = []
         self.complete_video_frames = []
         self.complete_video_frames_eval = []
-
-
+    
     def _reset_root_states(self, env_ids, cfg):
         """ Resets ROOT states position and velocities of selected environmments
             Sets base position based on the curriculum
@@ -262,3 +261,7 @@ class WallControlEnv(VelocityTrackingEasyEnv):
             else:
                 self.complete_video_frames_eval = self.video_frames_eval[:]
             self.video_frames_eval = []
+
+
+
+

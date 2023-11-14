@@ -11,7 +11,7 @@ from go1_gym.envs import *
 from go1_gym.envs.base.legged_robot_config import Cfg
 from go1_gym.envs.go1.go1_config import config_go1
 from go1_gym.envs.go1.velocity_tracking import VelocityTrackingEasyEnv
-from go1_gym.envs.go1.wall_control import WallControlEnv
+from go1_gym.envs.go1.world import World
 
 from tqdm import tqdm
 
@@ -94,7 +94,7 @@ def load_env(label, headless=False):
 
     from go1_gym.envs.wrappers.history_wrapper import HistoryWrapper
 
-    env = WallControlEnv(sim_device='cuda:0', headless=headless, cfg=Cfg)
+    env = World(sim_device='cuda:0', headless=headless, cfg=Cfg)
     env = HistoryWrapper(env)
 
     # load policy
