@@ -273,4 +273,3 @@ class World(Navigator):
         env_ids = torch.arange(self.num_envs)
         self.rew_buf = (self.root_states[self.num_actors_per_env * env_ids,0:1] - self.goals[:,0:1])[:,0]
         print("Called from world")
-

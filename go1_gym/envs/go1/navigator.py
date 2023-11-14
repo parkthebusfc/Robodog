@@ -14,8 +14,18 @@ from go1_gym.envs.base.legged_robot_config import Cfg
 
 class Navigator(VelocityTrackingEasyEnv):
     def __init__(self, sim_device, headless, num_envs=None, prone=False, deploy=False,
-                    cfg: Cfg = None, eval_cfg: Cfg = None, initial_dynamics_dict=None, physics_engine="SIM_PHYSX", locomtion_model_dir = "gait-conditioned-agility/pretrain-v0/train/025417.456545"):
+                    cfg: Cfg = None, eval_cfg: Cfg = None, initial_dynamics_dict=None, physics_engine="SIM_PHYSX", locomtion_model_dir = "gait-conditioned-agility/pretrain-v0/train/025417.456545", behavior_commands = {
+                        "body_height" : 0.0,
+                        "step_frequency" : 3.0,
+                        "gait" : torch.Tensor([0.5, 0, 0]),
+                        "durations" : 0.5,
+                        "footswing_height" : 0.08,
+                        "pitch" : 0.0,
+                        "roll" : 0.0,
+                        "stance_width" : 0.25
+                    }):
         self.locomotion_model_dir = locomtion_model_dir
+        self.behavior = behavior_commands
         self.load_locomotion_policy()
         super().__init__(sim_device, headless, num_envs, prone,deploy,cfg, eval_cfg,initial_dynamics_dict,physics_engine)
         
@@ -26,7 +36,16 @@ class Navigator(VelocityTrackingEasyEnv):
                                         device=self.device, requires_grad=False)
         self.num_privileged_obs = self.num_privileged_obs
 
-        ## need to compute the goal position
+    def _resample_commands(self, env_ids):
+        self.commands[env_ids, 3] = self.behavior["body_height"]
+        self.commands[env_ids, 4] = self.behavior["step_frequency"]
+        self.commands[env_ids, 5:8] =self.behavior["gait"]
+        self.commands[env_ids, 8] = self.behavior["durations"]
+        self.commands[env_ids, 9] = self.behavior["footswing_height"]
+        self.commands[env_ids, 10] = self.behavior["pitch"]
+        self.commands[env_ids, 11] = self.behavior["roll"]
+        self.commands[env_ids, 12] = self.behavior["stance_width"]
+        
     def load_locomotion_policy(self):
         body = torch.jit.load(self.locomotion_model_dir + '/checkpoints/body_latest.jit')
         import os
