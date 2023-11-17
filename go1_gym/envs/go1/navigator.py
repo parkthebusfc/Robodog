@@ -14,7 +14,7 @@ from go1_gym.envs.base.legged_robot_config import Cfg
 
 class Navigator(VelocityTrackingEasyEnv):
     def __init__(self, sim_device, headless, num_envs=None, prone=False, deploy=False,
-                    cfg: Cfg = None, eval_cfg: Cfg = None, initial_dynamics_dict=None, physics_engine="SIM_PHYSX", locomtion_model_dir = "gait-conditioned-agility/pretrain-v0/train/025417.456545", behavior_commands = {
+                    cfg: Cfg = None, eval_cfg: Cfg = None, initial_dynamics_dict=None, physics_engine="SIM_PHYSX", locomtion_model_dir = "../runs/gait-conditioned-agility/2023-11-03/train/210513.245978", behavior_commands = {
                         "body_height" : 0.0,
                         "step_frequency" : 3.0,
                         "gait" : torch.Tensor([0.5, 0, 0]),
@@ -34,7 +34,16 @@ class Navigator(VelocityTrackingEasyEnv):
         self.num_obs_history = self.obs_history_length * self.num_obs
         self.obs_history = torch.zeros(self.num_envs, self.num_obs_history, dtype=torch.float,
                                         device=self.device, requires_grad=False)
-        self.num_privileged_obs = self.num_privileged_obs
+        
+        self.nav_obs_len = 10
+        self.nav_obs_history_len = 5
+
+        self.num_nav_obs_history = self.nav_obs_len * self.nav_obs_history_len 
+        self.nav_obs_history = torch.zeros(self.num_envs, self.num_nav_obs_history, dtype=torch.float,
+                                        device=self.device, requires_grad=False)
+
+        
+        
 
     def _resample_commands(self, env_ids):
         self.commands[env_ids, 3] = self.behavior["body_height"]
@@ -68,9 +77,13 @@ class Navigator(VelocityTrackingEasyEnv):
 
     def get_observations(self):
         obs = self.get_observation_buffer()
-        privileged_obs = self.get_privileged_observations()
         self.obs_history = torch.cat((self.obs_history[:, self.num_obs:], obs), dim=-1)
-        return {'obs': obs, 'privileged_obs': privileged_obs, 'obs_history': self.obs_history}
+        nav_obs_reqd = torch.cat((self.base_pos, self.base_lin_vel, self.base_quat), dim=-1)
+        self.nav_obs_history = torch.cat((self.nav_obs_history[:,self.nav_obs_len:], nav_obs_reqd),dim=-1)
+
+        return {'obs': obs, 'obs_history': self.obs_history, 'obs_nav': nav_obs_reqd , 'nav_obs_history': self.nav_obs_history}
+    
+    
 
     def step(self, cmd):
         # cmds are the velocities that nav policy outputs
@@ -80,10 +93,14 @@ class Navigator(VelocityTrackingEasyEnv):
         obs = self.get_observations()
         locomotion_actions = self.locomotion_policy(obs)
         obs, rew, done, info = self.velocity_step(locomotion_actions)
-        privileged_obs = info["privileged_obs"]
-        self.obs_history = torch.cat((self.obs_history[:, self.num_obs:], obs), dim=-1)
+        # update obs
+       # obs_reqd = torch.cat((self.base_pos, self.base_lin_vel, self.base_quat), dim=-1) 
 
-        return {'obs': obs, 'privileged_obs': privileged_obs, 'obs_history': self.obs_history}, rew, done, info
+        self.obs_history = torch.cat((self.obs_history[:, self.num_obs:], obs), dim=-1)
+        nav_obs_reqd = torch.cat((self.base_pos, self.base_lin_vel, self.base_quat), dim=-1)
+        self.nav_obs_history = torch.cat((self.nav_obs_history[:,self.nav_obs_len:], nav_obs_reqd),dim=-1)
+
+        return {'obs': obs, 'obs_history': self.obs_history, 'obs_nav': nav_obs_reqd, 'nav_obs_history': self.nav_obs_history}, rew, done, info
 
     def reset_idx(self, env_ids):  # it might be a problem that this isn't getting called!!
         ret = super().reset_idx(env_ids)
@@ -91,4 +108,7 @@ class Navigator(VelocityTrackingEasyEnv):
         return ret
     
     def reset(self):
-        self.reset_idx(torch.arange(self.num_envs, device=self.device))
+        #self.reset_idx(torch.arange(self.num_envs, device=self.device))
+        obs = super().reset()
+        obs_reqd = torch.cat((self.base_pos, self.base_lin_vel, self.base_quat), dim=-1) 
+        return obs_reqd

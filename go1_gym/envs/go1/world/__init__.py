@@ -13,10 +13,11 @@ from go1_gym.envs.base.legged_robot_config import Cfg
 
 class World(Navigator):
     def __init__(self, sim_device, headless, num_envs=None, prone=False, deploy=False,
-                 cfg: Cfg = None, eval_cfg: Cfg = None, initial_dynamics_dict=None, physics_engine="SIM_PHYSX", locomtion_model_dir = "gait-conditioned-agility/pretrain-v0/train/025417.456545"):
+                 cfg: Cfg = None, eval_cfg: Cfg = None, initial_dynamics_dict=None, physics_engine="SIM_PHYSX", locomtion_model_dir = "../runs/gait-conditioned-agility/2023-11-03/train/210513.245978"):
         super().__init__(sim_device, headless, num_envs, prone,deploy,cfg,eval_cfg,initial_dynamics_dict,physics_engine, locomtion_model_dir=locomtion_model_dir)
 
         self.num_actions = 3
+        
 
     def update_goals(self, env_ids):
         self.init_root_states = self.root_states[self.num_actors_per_env * env_ids, :3]
@@ -298,7 +299,10 @@ class World(Navigator):
         self.rew_buf += -10 * self.time_out_buf
 
         self.episode_sums["goal_reward"] += (self.root_states[self.num_actors_per_env * env_ids,0:1] - self.goals[:,0:1])[:,0]
-        self.episode_sums["wall_penalty"] += -2 * torch.abs(self.init_root_states[:,1] - self.root_states[self.num_actors_per_env* env_ids, ])
+        init_root_states_column = self.init_root_states[:, 1].unsqueeze(1)
+        penalty = -2 * torch.abs(init_root_states_column - self.root_states[self.num_actors_per_env * env_ids, :])
+        #self.episode_sums["wall_penalty"] += -2 * torch.abs(self.init_root_states[:,1] - self.root_states[self.num_actors_per_env* env_ids, ])
+        self.episode_sums["wall_penalty"] += penalty.sum()
         self.episode_sums["timeout_penalty"] += -10 * self.time_out_buf
         self.episode_sums["total"] += self.rew_buf
 

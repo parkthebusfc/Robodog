@@ -7,7 +7,7 @@ import torch
 from ml_logger import logger
 from params_proto import PrefixProto
 
-from .actor_critic_nav import ActorCritic_Nav
+from .actor_critic_nav import ActorCritic
 from .rollout_storage_nav import RolloutStorage
 from .ppo_nav import PPO
 
@@ -67,9 +67,9 @@ class Runner:
         self.device = device
         self.env = env
 
-        actor_critic = ActorCritic_Nav(self.env.nav_obs_len,
+        actor_critic = ActorCritic(self.env.num_obs,
                                       
-                                      self.env.num_nav_obs_history,
+                                      self.env.num_obs_history,
                                       self.env.num_actions,
                                       ).to(self.device)
 
@@ -95,7 +95,7 @@ class Runner:
 
         # init storage and model
         self.alg.init_storage(self.env.num_train_envs, self.num_steps_per_env, [self.env.nav_obs_len],
-                               [self.env.num_nav_obs_history], [self.env.num_actions])
+                               [self.env.nav_obs_history_len], [self.env.num_actions])
 
         self.tot_timesteps = 0
         self.tot_time = 0
@@ -119,8 +119,8 @@ class Runner:
         num_train_envs = self.env.num_train_envs
 
         obs_dict = self.env.get_observations()  # TODO: check, is this correct on the first step?
-        obs,  obs_history, obs_nav , nav_obs_history = obs_dict["obs"], obs_dict["obs_history"], obs_dict["obs_nav"] , obs_dict["nav_obs_history"]
-        obs,  obs_history, obs_nav , nav_obs_history = obs.to(self.device), obs_history.to(self.device), obs_nav.to(self.device) , nav_obs_history.to(self.device)
+        obs,  obs_history = obs_dict["obs"], obs_dict["obs_history"]
+        obs,  obs_history = obs.to(self.device), obs_history.to(self.device)
         self.alg.actor_critic.train()  # switch to train mode (for dropout for example)
 
         rewbuffer = deque(maxlen=100)
@@ -136,18 +136,18 @@ class Runner:
             # Rollout
             with torch.inference_mode():
                 for i in range(self.num_steps_per_env):
-                    actions_train = self.alg.act(obs_nav[:num_train_envs], 
-                                                 nav_obs_history[:num_train_envs])
+                    actions_train = self.alg.act(obs[:num_train_envs], 
+                                                 obs_history[:num_train_envs])
                     # if eval_expert:
                     #     actions_eval = self.alg.actor_critic.act_teacher(obs_history[num_train_envs:])
                     # else:
                     #     actions_eval = self.alg.actor_critic.act_student(obs_history[num_train_envs:])
                     ret = self.env.step(actions_train)
                     obs_dict, rewards, dones, infos = ret
-                    obs,  obs_history , obs_nav , nav_obs_history = obs_dict["obs"], obs_dict[
-                        "obs_history"], obs_dict["obs_nav"] , obs_dict["nav_obs_history"]
+                    obs,  obs_history = obs_dict["obs"], obs_dict[
+                        "obs_history"]
 
-                    obs,  obs_history, obs_nav,nav_obs_history, rewards, dones = obs.to(self.device),  obs_history.to(self.device), obs_nav.to(self.device),nav_obs_history.to(self.device), rewards.to(self.device), dones.to(self.device)
+                    obs,  obs_history, rewards, dones = obs.to(self.device),  obs_history.to(self.device), rewards.to(self.device), dones.to(self.device)
                     self.alg.process_env_step(rewards[:num_train_envs], dones[:num_train_envs], infos)
 
                     if 'train/episode' in infos:
@@ -185,7 +185,7 @@ class Runner:
 
                 # Learning step
                 start = stop
-                self.alg.compute_returns(nav_obs_history[:num_train_envs])
+                self.alg.compute_returns(obs_history[:num_train_envs])
 
                 # if it % curriculum_dump_freq == 0:
                 #     logger.save_pkl({"iteration": it,
