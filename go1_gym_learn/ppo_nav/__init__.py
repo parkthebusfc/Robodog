@@ -2,6 +2,7 @@ import time
 from collections import deque
 import copy
 import os
+import pandas as pd
 
 import torch
 from ml_logger import logger
@@ -48,7 +49,7 @@ class RunnerArgs(PrefixProto, cli=False):
     max_iterations = 1500  # number of policy updates
 
     # logging
-    save_interval = 100  # check for potential saves every this many iterations
+    save_interval = 400  # check for potential saves every this many iterations
     save_video_interval = 10
     log_freq = 10
 
@@ -68,6 +69,7 @@ class Runner:
         self.env = env
 
         actor_critic = ActorCritic_Nav(self.env.nav_obs_len,
+                                      
                                       self.env.num_nav_obs_history,
                                       self.env.num_actions,
                                       ).to(self.device)
@@ -122,6 +124,13 @@ class Runner:
         obs,  obs_history, obs_nav , nav_obs_history = obs.to(self.device), obs_history.to(self.device), obs_nav.to(self.device) , nav_obs_history.to(self.device)
         self.alg.actor_critic.train()  # switch to train mode (for dropout for example)
 
+        rewbuffer = deque(maxlen=100)
+        lenbuffer = deque(maxlen=100)
+        rewbuffer_eval = deque(maxlen=100)
+        lenbuffer_eval = deque(maxlen=100)
+        cur_reward_sum = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
+        cur_episode_length = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
+
         tot_iter = self.current_learning_iteration + num_learning_iterations
         for it in range(self.current_learning_iteration, tot_iter):
             start = time.time()
@@ -130,6 +139,10 @@ class Runner:
                 for i in range(self.num_steps_per_env):
                     actions_train = self.alg.act(obs_nav[:num_train_envs], 
                                                  nav_obs_history[:num_train_envs])
+                    # if eval_expert:
+                    #     actions_eval = self.alg.actor_critic.act_teacher(obs_history[num_train_envs:])
+                    # else:
+                    #     actions_eval = self.alg.actor_critic.act_student(obs_history[num_train_envs:])
                     ret = self.env.step(actions_train)
                     obs_dict, rewards, dones, infos = ret
                     obs,  obs_history , obs_nav , nav_obs_history = obs_dict["obs"], obs_dict[
@@ -146,12 +159,45 @@ class Runner:
                         with logger.Prefix(metrics="eval/episode"):
                             logger.store_metrics(**infos['eval/episode'])
 
+                    # if 'curriculum' in infos:
+
+                    #     cur_reward_sum += rewards
+                    #     cur_episode_length += 1
+
+                    #     new_ids = (dones > 0).nonzero(as_tuple=False)
+
+                    #     new_ids_train = new_ids[new_ids < num_train_envs]
+                    #     rewbuffer.extend(cur_reward_sum[new_ids_train].cpu().numpy().tolist())
+                    #     lenbuffer.extend(cur_episode_length[new_ids_train].cpu().numpy().tolist())
+                    #     cur_reward_sum[new_ids_train] = 0
+                    #     cur_episode_length[new_ids_train] = 0
+
+                    #     new_ids_eval = new_ids[new_ids >= num_train_envs]
+                    #     rewbuffer_eval.extend(cur_reward_sum[new_ids_eval].cpu().numpy().tolist())
+                    #     lenbuffer_eval.extend(cur_episode_length[new_ids_eval].cpu().numpy().tolist())
+                    #     cur_reward_sum[new_ids_eval] = 0
+                    #     cur_episode_length[new_ids_eval] = 0
+
+                    # if 'curriculum/distribution' in infos:
+                    #     distribution = infos['curriculum/distribution']
+
                 stop = time.time()
                 collection_time = stop - start
 
                 # Learning step
                 start = stop
                 self.alg.compute_returns(nav_obs_history[:num_train_envs])
+
+                # if it % curriculum_dump_freq == 0:
+                #     logger.save_pkl({"iteration": it,
+                #                      **caches.slot_cache.get_summary(),
+                #                      **caches.dist_cache.get_summary()},
+                #                     path=f"curriculum/info.pkl", append=True)
+
+                #     if 'curriculum/distribution' in infos:
+                #         logger.save_pkl({"iteration": it,
+                #                          "distribution": distribution},
+                #                          path=f"curriculum/distribution.pkl", append=True)
 
             mean_value_loss, mean_surrogate_loss,  mean_decoder_loss, mean_decoder_loss_student, mean_decoder_test_loss, mean_decoder_test_loss_student = self.alg.update()
             stop = time.time()
@@ -173,6 +219,7 @@ class Runner:
 
             if RunnerArgs.save_video_interval:
                 self.log_video(it)
+                #self.log_reward('')
 
             self.tot_timesteps += self.num_steps_per_env * self.env.num_envs
             if logger.every(RunnerArgs.log_freq, "iteration", start_on=1):
@@ -188,6 +235,11 @@ class Runner:
                     path = './tmp/legged_data'
 
                     os.makedirs(path, exist_ok=True)
+
+                    # adaptation_module_path = f'{path}/adaptation_module_latest.jit'
+                    # adaptation_module = copy.deepcopy(self.alg.actor_critic.adaptation_module).to('cpu')
+                    # traced_script_adaptation_module = torch.jit.script(adaptation_module)
+                    # traced_script_adaptation_module.save(adaptation_module_path)
 
                     body_path = f'{path}/body_latest.jit'
                     body_model = copy.deepcopy(self.alg.actor_critic.actor_body).to('cpu')
@@ -206,6 +258,12 @@ class Runner:
             path = './tmp/legged_data'
 
             os.makedirs(path, exist_ok=True)
+
+            # adaptation_module_path = f'{path}/adaptation_module_latest.jit'
+            # adaptation_module = copy.deepcopy(self.alg.actor_critic.adaptation_module).to('cpu')
+            # traced_script_adaptation_module = torch.jit.script(adaptation_module)
+            # traced_script_adaptation_module.save(adaptation_module_path)
+
             body_path = f'{path}/body_latest.jit'
             body_model = copy.deepcopy(self.alg.actor_critic.actor_body).to('cpu')
             traced_script_body_module = torch.jit.script(body_model)
@@ -214,7 +272,59 @@ class Runner:
             # logger.upload_file(file_path=adaptation_module_path, target_path=f"checkpoints/", once=False)
             logger.upload_file(file_path=body_path, target_path=f"checkpoints/", once=False)
 
+    
+    # def log_reward(self, base_file_name):
+    #     # Create unique file names for each type of reward
+    #     total_reward_file_name = f'{base_file_name}_total_reward.csv'
+    #     goal_reward_file_name = f'{base_file_name}_goal_reward.csv'
+    #     wall_penalty_file_name = f'{base_file_name}_wall_penalty.csv'
+    #     timeout_penalty_file_name = f'{base_file_name}_timeout_penalty.csv'
 
+    #     # Check if the CSV files exist
+    #     total_reward_exists = os.path.exists(total_reward_file_name)
+    #     goal_reward_exists = os.path.exists(goal_reward_file_name)
+    #     wall_penalty_exists = os.path.exists(wall_penalty_file_name)
+    #     timeout_penalty_exists = os.path.exists(timeout_penalty_file_name)
+
+    #     # Read existing data from the CSV files if they exist
+    #     old_total_reward_values = pd.DataFrame()
+    #     old_goal_reward_values = pd.DataFrame()
+    #     old_wall_penalty_values = pd.DataFrame()
+    #     old_timeout_penalty_values = pd.DataFrame()
+
+    #     if total_reward_exists:
+    #         old_total_reward_values = pd.read_csv(total_reward_file_name, header=None)
+
+    #     if goal_reward_exists:
+    #         old_goal_reward_values = pd.read_csv(goal_reward_file_name, header=None)
+
+    #     if wall_penalty_exists:
+    #         old_wall_penalty_values = pd.read_csv(wall_penalty_file_name, header=None)
+
+    #     if timeout_penalty_exists:
+    #         old_timeout_penalty_values = pd.read_csv(timeout_penalty_file_name, header=None)
+
+    #     # Append new values to the DataFrames
+    #     new_total_reward_values = pd.concat([old_total_reward_values, pd.DataFrame(self.env.total_reward_buffer)], ignore_index=True)
+    #     new_goal_reward_values = pd.concat([old_goal_reward_values, pd.DataFrame(self.env.goal_reward_buffer)], ignore_index=True)
+    #     new_wall_penalty_values = pd.concat([old_wall_penalty_values, pd.DataFrame(self.env.wall_penalty_buffer)], ignore_index=True)
+    #     new_timeout_penalty_values = pd.concat([old_timeout_penalty_values, pd.DataFrame(self.env.timeout_penalty_buffer)], ignore_index=True)
+
+    #     # Write the updated DataFrames to the CSV files
+    #     new_total_reward_values.to_csv(total_reward_file_name, index=False, header=None)
+    #     new_goal_reward_values.to_csv(goal_reward_file_name, index=False, header=None)
+    #     new_wall_penalty_values.to_csv(wall_penalty_file_name, index=False, header=None)
+    #     new_timeout_penalty_values.to_csv(timeout_penalty_file_name, index=False, header=None)
+
+    #     # Clear the buffers
+    #     self.env.total_reward_buffer = []
+    #     self.env.goal_reward_buffer = []
+    #     self.env.wall_penalty_buffer = []
+    #     self.env.timeout_penalty_buffer = []
+
+        
+
+        #access env variables to get the world class lists and use the variables names for the functions appropriately.
     def log_video(self, it):
         if it - self.last_recording_it >= RunnerArgs.save_video_interval:
             self.env.start_recording()
@@ -236,3 +346,14 @@ class Runner:
                 print("LOGGING EVAL VIDEO")
                 logger.save_video(frames, f"videos/{it:05d}_eval.mp4", fps=1 / self.env.dt)
 
+    # def get_inference_policy(self, device=None):
+    #     self.alg.actor_critic.eval()  # switch to evaluation mode (dropout for example)
+    #     if device is not None:
+    #         self.alg.actor_critic.to(device)
+    #     return self.alg.actor_critic.act_inference
+
+    # def get_expert_policy(self, device=None):
+    #     self.alg.actor_critic.eval()  # switch to evaluation mode (dropout for example)
+    #     if device is not None:
+    #         self.alg.actor_critic.to(device)
+    #     return self.alg.actor_critic.act_expert

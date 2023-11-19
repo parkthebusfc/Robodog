@@ -17,12 +17,18 @@ class World(Navigator):
         super().__init__(sim_device, headless, num_envs, prone,deploy,cfg,eval_cfg,initial_dynamics_dict,physics_engine, locomtion_model_dir=locomtion_model_dir)
 
         self.num_actions = 3
+        self.total_reward_buffer = []
+        self.goal_reward_buffer = []
+        self.wall_penalty_buffer = []
+        self.timeout_penalty_buffer = []
+
         
 
     def update_goals(self, env_ids):
         self.init_root_states = self.root_states[self.num_actors_per_env * env_ids, :3]
         self.goals = self.root_states[self.num_actors_per_env * env_ids, :3]
         self.goals[:, 0:1] += 3 * torch.ones((len(env_ids), 1)).to(self.goals.device)
+        print("Computed Goals!")
 
     def _create_envs(self):
         """ Creates environments:
@@ -141,14 +147,14 @@ class World(Navigator):
             ## Adding walls
             offset = [
                 (1.5,1,1),
-                (4.0,0,1),
+                (3.5,0,1),
                 (1.5,-1,1),
-                (-1.0,0,1),
+                (-0.5,0,1),
             ]
             dimensions = [
-                (5,0.12,2.0),
+                (4,0.12,2.0),
                 (0.12,2.0,2.0),
-                (5.0,0.12,2.0),
+                (4.0,0.12,2.0),
                 (0.12,2.0,2.0),
             ]
             
@@ -206,24 +212,9 @@ class World(Navigator):
         self.complete_video_frames_eval = []
 
     def reset_idx(self, env_ids):
+        super().reset_idx(env_ids)
 
-        if len(env_ids) == 0:
-            return
-
-        # reset robot states
-        self._resample_commands(env_ids)
-
-        self._call_train_eval(self._reset_dofs, env_ids)
-        self._call_train_eval(self._reset_root_states, env_ids)
-
-        # reset buffers
-        self.last_actions[env_ids] = 0.
-        self.last_last_actions[env_ids] = 0.
-        self.last_dof_vel[env_ids] = 0.
-        self.feet_air_time[env_ids] = 0.
-        self.episode_length_buf[env_ids] = 0
-        self.reset_buf[env_ids] = 1
-
+        self.extras = {}
         train_env_ids = env_ids[env_ids < self.num_train_envs]
         if len(train_env_ids) > 0:
             self.extras["train/episode"] = {}
@@ -240,12 +231,15 @@ class World(Navigator):
                 self.episode_sums_eval[key][unset_eval_envs] = self.episode_sums[key][unset_eval_envs]
                 self.episode_sums[key][eval_env_ids] = 0.
         self.extras["time_outs"] = self.time_out_buf[:self.num_train_envs]
-        self.gait_indices[env_ids] = 0
-
-        for i in range(len(self.lag_buffer)):
-            self.lag_buffer[i][env_ids, :] = 0
 
     def _reset_root_states(self, env_ids, cfg):
+        """ Resets ROOT states position and velocities of selected environmments
+            Sets base position based on the curriculum
+            Selects randomized base velocities within -0.5:0.5 [m/s, rad/s]
+        Args:
+            env_ids (List[int]): Environemnt ids
+        """
+        print("Num Actors: ",self.num_actors_per_env)
         ### Transform of robot which is the first actor of each environment
         # base position 
         if self.custom_origins:
@@ -264,13 +258,6 @@ class World(Navigator):
             self.root_states[self.num_actors_per_env * env_ids, :3] += self.env_origins[env_ids]
         
         self.update_goals(env_ids)
-
-        if self.viewer:
-            points = []
-            for g in self.goals:
-                points.extend((g + torch.Tensor([0,-1,0]).to(g.device)).tolist())
-                points.extend((g + torch.Tensor([0,1,0]).to(g.device)).tolist())
-            self.gym.add_lines(self.viewer,self.envs[0],self.num_envs,np.array(points,dtype=np.float32),np.array([[0,0,1.0] for _ in range(self.num_envs)]).reshape((-1)).astype(np.float32))
         # base yaws
         init_yaws = torch_rand_float(-cfg.terrain.yaw_init_range,
                                      cfg.terrain.yaw_init_range, (len(env_ids), 1),
@@ -290,11 +277,10 @@ class World(Navigator):
                                                      gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
         if not status:
             raise SystemError("Could not set necessary transforms")
-
         if cfg.env.record_video:
             bx, by, bz = self.root_states[0, 0], self.root_states[0, 1], self.root_states[0, 2]
-            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx + 4.0, by, bz + 4.0),
-                                         gymapi.Vec3(bx + 1.5, by, bz))
+            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx, by - 3.0 , bz + 6.0),
+                                         gymapi.Vec3(bx, by, bz))
 
         if cfg.env.record_video and 0 in env_ids:
             if self.complete_video_frames is None:
@@ -312,35 +298,47 @@ class World(Navigator):
     
     def compute_reward(self):
         self.rew_buf[:] = 0
-        env_ids = torch.arange(self.num_envs)  
+        env_ids = torch.arange(self.num_envs)
         robot_pos = self.root_states[self.num_actors_per_env * env_ids,0:3]
-
-        success = robot_pos[:,0] >= self.goals[:,0]
-        task_reward =   torch.exp(-torch.norm(robot_pos[:,0:1] - self.goals[:,0]))
-
         
         # reward structure (+ve main task) * exp(negative auxiliary rewards)
 
         # going to the wall
-
+        task_reward = torch.exp(-1 * torch.norm(robot_pos[:,0:1] - self.goals[:,0]))
+        self.goal_reward_buffer.append(task_reward.item())
+        success = robot_pos[:,0] >= self.goals[:,0]
         # auxiliary rewards
         # avoiding timeouts
-        timeout_penalty = self.time_out_buf.to(torch.float)
+        timeout_penalty = self.time_out_buf.to(torch.int)
+        self.timeout_penalty_buffer.append(timeout_penalty.item())
+
         # avoid walls
         wall_penalty = []
         for wall_num in range(4):
             wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + wall_num + 1,0:3] - self.goals,keepdim=True,dim=1))
         
+        
+
         wall_penalty =  torch.min(torch.stack(wall_penalty, axis=1),axis=1)[0].squeeze(1)
         # wall_penalty -= 0.5
         wall_penalty = 1/(wall_penalty)
+        self.wall_penalty_buffer.append(wall_penalty.item())
 
         self.rew_buf = (task_reward + success * 0.2 ) * torch.exp( - (wall_penalty + timeout_penalty * 2)*0.2)
+        self.total_reward_buffer.append(self.rew_buf.item())
+        
+        
+        # self.rew_buf = (self.root_states[self.num_actors_per_env * env_ids,0:1] - self.goals[:,0:1])[:,0]
+        # self.rew_buf -= 2 * torch.abs(self.init_root_states[:,1] - self.root_states[self.num_actors_per_env* env_ids, 1])
+        # self.rew_buf += -10 * self.time_out_buf
 
-        self.episode_sums["goal_distance"] = torch.cat([self.episode_sums["goal_distance"],torch.norm(robot_pos[:,:1] - self.goals[:,:1],dim=1, keepdim=True)],dim=1)
-        self.episode_sums["timeouts"] += timeout_penalty
-        self.episode_sums["total_reward"] += self.rew_buf
-        self.episode_sums["successes"] += (success).to(torch.float)
+        # self.episode_sums["goal_reward"] += (self.root_states[self.num_actors_per_env * env_ids,0:1] - self.goals[:,0:1])[:,0]
+        # init_root_states_column = self.init_root_states[:, 1].unsqueeze(1)
+        # penalty = -2 * torch.abs(init_root_states_column - self.root_states[self.num_actors_per_env * env_ids, :])
+        # #self.episode_sums["wall_penalty"] += -2 * torch.abs(self.init_root_states[:,1] - self.root_states[self.num_actors_per_env* env_ids, ])
+        # self.episode_sums["wall_penalty"] += penalty.sum()
+        # self.episode_sums["timeout_penalty"] += -10 * self.time_out_buf
+        # self.episode_sums["total"] += self.rew_buf
 
     def check_termination(self):
         self.time_out_buf = self.episode_length_buf > self.cfg.env.max_episode_length
@@ -350,11 +348,9 @@ class World(Navigator):
 
     def _prepare_reward_function(self):
         self.episode_sums = {
-            x : torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
-            for x in ["total_reward","timeouts","successes"]
+            name: torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
+            for name in ["goal_reward","wall_penalty","timeout_penalty","total"]
         }
-        for x in ["goal_distance"]:
-            self.episode_sums[x] = torch.empty((self.num_envs, 0),device=self.device, requires_grad=False)
 
     def _parse_cfg(self, cfg):
         self.dt = self.cfg.control.decimation * self.sim_params.dt

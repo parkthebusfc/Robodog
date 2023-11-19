@@ -265,6 +265,7 @@ class LeggedRobot(BaseTask):
             Calls each reward function which had a non-zero scale (processed in self._prepare_reward_function())
             adds each terms to the episode sums and to the total reward
         """
+        print("Called from Velocity Tracking")
         self.rew_buf[:] = 0.
         self.rew_buf_pos[:] = 0.
         self.rew_buf_neg[:] = 0.
@@ -1004,10 +1005,13 @@ class LeggedRobot(BaseTask):
 
         if cfg.env.record_video:
             bx, by, bz = self.root_states[0, 0], self.root_states[0, 1], self.root_states[0, 2]
-            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx + 5, by, bz + 6.0),
-                                         gymapi.Vec3(bx + 1.5, by, bz))
+            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx, by - 3.0 , bz + 6.0),
+                                         gymapi.Vec3(bx, by, bz))
 
         if cfg.env.record_video and 0 in env_ids:
+            bx, by, bz = self.root_states[0, 0], self.root_states[0, 1], self.root_states[0, 2]
+            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx, by - 3.0 , bz + 6.0),
+                                         gymapi.Vec3(bx, by, bz))
             if self.complete_video_frames is None:
                 self.complete_video_frames = []
             else:
@@ -1598,8 +1602,8 @@ class LeggedRobot(BaseTask):
         # if recording video, set up camera
         if self.cfg.env.record_video:
             self.camera_props = gymapi.CameraProperties()
-            self.camera_props.width = 1920
-            self.camera_props.height = 1080
+            self.camera_props.width = 640
+            self.camera_props.height = 480
             self.rendering_camera = self.gym.create_camera_sensor(self.envs[0], self.camera_props)
             self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(1.5, 1, 3.0),
                                          gymapi.Vec3(0, 0, 0))
@@ -1618,7 +1622,7 @@ class LeggedRobot(BaseTask):
     def render(self, mode="rgb_array"):
         assert mode == "rgb_array"
         bx, by, bz = self.root_states[0, 0], self.root_states[0, 1], self.root_states[0, 2]
-        self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx, by - 1.0, bz + 1.0),
+        self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx, by, bz + 10.0),
                                      gymapi.Vec3(bx, by, bz))
         self.gym.step_graphics(self.sim)
         self.gym.render_all_camera_sensors(self.sim)
@@ -1642,7 +1646,7 @@ class LeggedRobot(BaseTask):
                 bx, by, bz = self.root_states[self.num_train_envs, 0], self.root_states[self.num_train_envs, 1], \
                              self.root_states[self.num_train_envs, 2]
                 self.gym.set_camera_location(self.rendering_camera_eval, self.envs[self.num_train_envs],
-                                             gymapi.Vec3(bx, by - 1.0, bz + 1.0),
+                                             gymapi.Vec3(bx, by, bz + 10.0),
                                              gymapi.Vec3(bx, by, bz))
                 self.video_frame_eval = self.gym.get_camera_image(self.sim, self.envs[self.num_train_envs],
                                                                   self.rendering_camera_eval,
@@ -1684,7 +1688,7 @@ class LeggedRobot(BaseTask):
             Otherwise create a grid.
         """
         if cfg.terrain.mesh_type in ["heightfield", "trimesh"]:
-            self.custom_origins = False
+            self.custom_origins = True
             # put robots at the origins defined by the terrain
             max_init_level = cfg.terrain.max_init_terrain_level
             min_init_level = cfg.terrain.min_init_terrain_level

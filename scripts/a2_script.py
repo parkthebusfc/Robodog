@@ -22,7 +22,9 @@ def load_policy(logdir):
 
     def policy(obs, info={}):
         i = 0
-        action = body.forward(obs["obs_history"])
+        latent = adaptation_module.forward(obs["obs_history"].to('cpu'))
+        action = body.forward(torch.cat((obs["obs_history"].to('cpu'), latent), dim=-1))
+        info['latent'] = latent
         return action
 
     return policy
@@ -98,9 +100,44 @@ def load_env(label, headless=False):
     # load policy
     from ml_logger import logger
     from go1_gym_learn.ppo_cse.actor_critic import ActorCritic
+
     policy = load_policy(logdir)
+
     return env, policy
 
+def dog_walk(env,policy, obs, num_eval_steps, x_vel_cmd, y_vel_cmd, yaw_vel_cmd):
+    # num_eval_steps = 250
+    gaits = {"pronking": [0, 0, 0],
+             "trotting": [0.5, 0, 0],
+             "bounding": [0, 0.5, 0],
+             "pacing": [0, 0, -0.5]}
+
+    # x_vel_cmd, y_vel_cmd, yaw_vel_cmed = 0.4, 0.0, 0.0
+    body_height_cmd = 0.0
+    step_frequency_cmd = 3.0
+    gait = torch.tensor(gaits["trotting"])
+    footswing_height_cmd = 0.08
+    pitch_cmd = 0.0
+    roll_cmd = 0.0
+    stance_width_cmd = 0.25
+
+    measured_vels = np.zeros((num_eval_steps,3))
+
+    for i in tqdm(range(num_eval_steps)):
+        env.commands[:, 3] = body_height_cmd
+        env.commands[:, 4] = step_frequency_cmd
+        env.commands[:, 5:8] = gait
+        env.commands[:, 8] = 0.5
+        env.commands[:, 9] = footswing_height_cmd
+        env.commands[:, 10] = pitch_cmd
+        env.commands[:, 11] = roll_cmd
+        env.commands[:, 12] = stance_width_cmd
+        obs, rew, done, info = env.step(torch.Tensor([x_vel_cmd, y_vel_cmd, yaw_vel_cmd]))
+        print("Just a placeholder")
+        # measured_vels[i,:] = env.base_lin_vel[0, :].cpu()
+
+    
+    return measured_vels
 
 def play_go1(headless=True):
     from ml_logger import logger
@@ -116,16 +153,37 @@ def play_go1(headless=True):
     label = "gait-conditioned-agility/pretrain-v0/train/025417.456545"
 
     env, policy = load_env(label, headless=headless)
-    env.start_recording()
 
     obs = env.reset()
-    for _ in range(100):
-        # with torch.no_grad():
-        #     action = policy(obs)
-        obs, rew, done, info = env.step(torch.Tensor([0,0,0]))
 
+    observed_vels = None
+    command_vels_array = None
+    steps_each = 1000
+    command_vels = [[0,0.0,0]]
+    num_eval_steps = 0
+    for cmd in command_vels:
+        obs_vel = dog_walk(env,policy, obs, steps_each, *cmd)
+        # num_eval_steps += steps_each
+        # if observed_vels is None:
+        #     observed_vels = obs_vel.copy()
+        #     command_vels_array = np.tile(np.array(cmd),(steps_each,1))
+        # else:
+        #     observed_vels = np.concatenate((observed_vels, obs_vel.copy()), axis = 0)
+        #     command_vels_array = np.concatenate((command_vels_array,np.tile(np.array(cmd),(steps_each,1))), axis=0)
     
-    saveToVideo(env.video_frames, "./imdump/test_video.mp4")
+    # from matplotlib import pyplot as plt
+    # saveToVideo(env.video_frames, "./imdump/test_video.mp4")
+    
+    # fig, axs = plt.subplots(3, 1, figsize=(12, 5))
+    # labels = ["X","Y","Yaw"]
+    
+    # for i in range(3):
+    #     axs[i].plot(np.linspace(0, num_eval_steps * env.dt, num_eval_steps), observed_vels[:,i], color='black', linestyle="-", label=f"Measured {labels[i]}-velocity")
+    #     axs[i].plot(np.linspace(0, num_eval_steps * env.dt, num_eval_steps), command_vels_array[:,i], color='black', linestyle="--", label=f"Desired {labels[i]}")
+    #     axs[i].set_ylim([-0.6,0.6])
+
+    # plt.tight_layout()
+    # plt.savefig("./imdump/plot.png")
 
 
 if __name__ == '__main__':

@@ -207,7 +207,7 @@ def train_go1(headless=True):
     Cfg.commands.gaitwise_curricula = True
 
     import os
-    env = World(sim_device='cuda:0',headless=headless, cfg=Cfg, locomtion_model_dir=os.path.join(os.path.dirname(__file__), "../runs/gait-conditioned-agility/pretrain-v0/train/025417.456545"))
+    env = World(sim_device='cuda:0',headless=headless, cfg=Cfg, locomtion_model_dir=os.path.join(os.path.dirname(__file__), "/common/home/ag2112/walk-these-ways-aniket/walk-these-ways/runs/gait-conditioned-agility/pretrain-v0/train/025417.456545"))
     # log the experiment parameters
     logger.log_params(AC_Args=vars(AC_Args), PPO_Args=vars(PPO_Args), RunnerArgs=vars(RunnerArgs),
                       Cfg=vars(Cfg))
