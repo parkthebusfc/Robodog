@@ -91,4 +91,7 @@ class Navigator(VelocityTrackingEasyEnv):
         return ret
     
     def reset(self):
-        self.reset_idx(torch.arange(self.num_envs, device=self.device))
+        #self.reset_idx(torch.arange(self.num_envs, device=self.device))
+        obs = super().reset()
+        obs_reqd = torch.cat((self.base_pos, self.base_lin_vel, self.base_quat), dim=-1) 
+        return obs_reqd
