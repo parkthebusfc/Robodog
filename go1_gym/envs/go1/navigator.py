@@ -85,7 +85,12 @@ class Navigator(VelocityTrackingEasyEnv):
     def step(self, cmd):
         # cmds are the velocities that nav policy outputs
         # Our step function takes these cmds and passes it through the locomotion policy, applies the computed torques, computes observations, rewards and so on
-        self.commands[:, :3] = cmd
+        clipped_cmd = cmd
+        clipped_cmd[:,1] = torch.clip(cmd[:,1],min=self.cfg.commands.limit_vel_y[0],max=self.cfg.commands.limit_vel_y[1])
+        clipped_cmd[:,0] = torch.clip(cmd[:,0],min=self.cfg.commands.limit_vel_x[0],max=self.cfg.commands.limit_vel_x[1])
+        clipped_cmd[:,2] = torch.clip(cmd[:,2],min=self.cfg.commands.limit_vel_yaw[0],max=self.cfg.commands.limit_vel_yaw[1])
+
+        self.commands[:, :3] = clipped_cmd
         
         obs = self.get_observations()
         locomotion_actions = self.locomotion_policy(obs)

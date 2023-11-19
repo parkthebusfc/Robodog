@@ -272,15 +272,15 @@ class World(Navigator):
                 points.extend((g + torch.Tensor([0,1,0]).to(g.device)).tolist())
             self.gym.add_lines(self.viewer,self.envs[0],self.num_envs,np.array(points,dtype=np.float32),np.array([[0,0,1.0] for _ in range(self.num_envs)]).reshape((-1)).astype(np.float32))
         # base yaws
-        init_yaws = torch_rand_float(-cfg.terrain.yaw_init_range,
-                                     cfg.terrain.yaw_init_range, (len(env_ids), 1),
-                                     device=self.device)
-        quat = quat_from_angle_axis(init_yaws, torch.Tensor([0, 0, 1]).to(self.device))[:, 0, :]
-        self.root_states[self.num_actors_per_env * env_ids, 3:7] = quat
+        # init_yaws = torch_rand_float(-cfg.terrain.yaw_init_range,
+        #                              cfg.terrain.yaw_init_range, (len(env_ids), 1),
+        #                              device=self.device)
+        # quat = quat_from_angle_axis(init_yaws, torch.Tensor([0, 0, 1]).to(self.device))[:, 0, :]
+        # self.root_states[self.num_actors_per_env * env_ids, 3:7] = quat
 
-        # base velocities
-        self.root_states[self.num_actors_per_env * env_ids, 7:13] = torch_rand_float(-0.5, 0.5, (len(env_ids), 6),
-                                                           device=self.device)  # [7:10]: lin vel, [10:13]: ang vel
+        # # base velocities
+        # self.root_states[self.num_actors_per_env * env_ids, 7:13] = torch_rand_float(-0.5, 0.5, (len(env_ids), 6),
+        #                                                    device=self.device)  # [7:10]: lin vel, [10:13]: ang vel
 
         env_ids_int32 = torch.arange(self.root_states.shape[0], dtype=torch.int32, device=env_ids.device)
 
@@ -315,27 +315,23 @@ class World(Navigator):
         env_ids = torch.arange(self.num_envs)  
         robot_pos = self.root_states[self.num_actors_per_env * env_ids,0:3]
 
-        success = robot_pos[:,0] >= self.goals[:,0]
-        task_reward =   torch.exp(-torch.norm(robot_pos[:,0:1] - self.goals[:,0]))
-
-        
+        success = robot_pos[:,0] >= self.goals[:,0]        
         # reward structure (+ve main task) * exp(negative auxiliary rewards)
-
-        # going to the wall
-
+        task_reward =   torch.exp(-torch.square(robot_pos[:,0] - self.goals[:,0]) / 6)
         # auxiliary rewards
         # avoiding timeouts
         timeout_penalty = self.time_out_buf.to(torch.float)
         # avoid walls
         wall_penalty = []
-        for wall_num in range(4):
-            wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + wall_num + 1,0:3] - self.goals,keepdim=True,dim=1))
+        
+        wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 1,1:2] - self.goals[:,1:2],keepdim=True,dim=1))
+        wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 3,1:2] - self.goals[:,1:2],keepdim=True,dim=1))
+        wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 2,0:1] - self.goals[:,0:1],keepdim=True,dim=1))
+        wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 4,0:1] - self.goals[:,0:1],keepdim=True,dim=1))
         
         wall_penalty =  torch.min(torch.stack(wall_penalty, axis=1),axis=1)[0].squeeze(1)
-        # wall_penalty -= 0.5
-        wall_penalty = 1/(wall_penalty)
-
-        self.rew_buf = (task_reward + success * 0.2 ) * torch.exp( - (wall_penalty + timeout_penalty * 2)*0.2)
+        wall_penalty = torch.exp( - (wall_penalty-0.25)*14)
+        self.rew_buf = (task_reward * 0.2 + success * 0.2 ) * torch.exp( - wall_penalty * 0.3 - timeout_penalty * 0.2)
 
         self.episode_sums["goal_distance"] = torch.cat([self.episode_sums["goal_distance"],torch.norm(robot_pos[:,:1] - self.goals[:,:1],dim=1, keepdim=True)],dim=1)
         self.episode_sums["timeouts"] += timeout_penalty

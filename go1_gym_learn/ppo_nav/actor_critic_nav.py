@@ -9,7 +9,7 @@ class AC_Args(PrefixProto, cli=False):
     init_noise_std = 1.0
     actor_hidden_dims = [512, 256, 128]
     critic_hidden_dims = [512, 256, 128]
-    activation = 'tanh'  # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
+    activation = 'elu'  # can be elu, relu, selu, crelu, lrelu, tanh, sigmoid
 
     adaptation_module_branch_hidden_dims = [256, 128]
 
