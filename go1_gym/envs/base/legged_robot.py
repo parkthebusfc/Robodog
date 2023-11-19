@@ -1005,13 +1005,10 @@ class LeggedRobot(BaseTask):
 
         if cfg.env.record_video:
             bx, by, bz = self.root_states[0, 0], self.root_states[0, 1], self.root_states[0, 2]
-            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx, by - 4.0, bz + 3.0),
-                                         gymapi.Vec3(bx, by, bz))
+            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx + 5, by, bz + 6.0),
+                                         gymapi.Vec3(bx + 1.5, by, bz))
 
         if cfg.env.record_video and 0 in env_ids:
-            bx, by, bz = self.root_states[0, 0], self.root_states[0, 1], self.root_states[0, 2]
-            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx, by - 3.0, bz + 3.0),
-                                         gymapi.Vec3(bx, by, bz))
             if self.complete_video_frames is None:
                 self.complete_video_frames = []
             else:

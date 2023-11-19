@@ -153,26 +153,15 @@ def play_go1(headless=True):
     label = "gait-conditioned-agility/pretrain-v0/train/025417.456545"
 
     env, policy = load_env(label, headless=headless)
+    env.start_recording()
 
     obs = env.reset()
-
-    observed_vels = None
-    command_vels_array = None
-    steps_each = 1000
+    steps_each = 200
     command_vels = [[0,0.0,0]]
-    num_eval_steps = 0
     for cmd in command_vels:
         obs_vel = dog_walk(env,policy, obs, steps_each, *cmd)
-        # num_eval_steps += steps_each
-        # if observed_vels is None:
-        #     observed_vels = obs_vel.copy()
-        #     command_vels_array = np.tile(np.array(cmd),(steps_each,1))
-        # else:
-        #     observed_vels = np.concatenate((observed_vels, obs_vel.copy()), axis = 0)
-        #     command_vels_array = np.concatenate((command_vels_array,np.tile(np.array(cmd),(steps_each,1))), axis=0)
     
-    # from matplotlib import pyplot as plt
-    # saveToVideo(env.video_frames, "./imdump/test_video.mp4")
+    saveToVideo(env.video_frames, "./imdump/test_video.mp4")
     
     # fig, axs = plt.subplots(3, 1, figsize=(12, 5))
     # labels = ["X","Y","Yaw"]

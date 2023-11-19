@@ -272,10 +272,11 @@ class World(Navigator):
                                                      gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
         if not status:
             raise SystemError("Could not set necessary transforms")
+
         if cfg.env.record_video:
             bx, by, bz = self.root_states[0, 0], self.root_states[0, 1], self.root_states[0, 2]
-            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx, by - 4.0, bz + 3.0),
-                                         gymapi.Vec3(bx, by, bz))
+            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx + 3.5, by, bz + 4.0),
+                                         gymapi.Vec3(bx + 1.5, by, bz))
 
         if cfg.env.record_video and 0 in env_ids:
             if self.complete_video_frames is None:
@@ -303,7 +304,7 @@ class World(Navigator):
 
         # auxiliary rewards
         # avoiding timeouts
-        timeout_penalty = self.time_out_buf.astype(torch.int)
+        timeout_penalty = self.time_out_buf.to(torch.int)
         # avoid walls
         wall_penalty = None
         for wall_num in range(4):
