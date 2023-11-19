@@ -316,9 +316,8 @@ class World(Navigator):
         robot_pos = self.root_states[self.num_actors_per_env * env_ids,0:3]
 
         success = robot_pos[:,0] >= self.goals[:,0]
-        task_reward = torch.norm(robot_pos[:,0:1] - self.goals[:,0])
+        task_reward =   torch.exp(-torch.norm(robot_pos[:,0:1] - self.goals[:,0]))
 
-        self.rew_buf[success] = 1000
         
         # reward structure (+ve main task) * exp(negative auxiliary rewards)
 
@@ -328,14 +327,15 @@ class World(Navigator):
         # avoiding timeouts
         timeout_penalty = self.time_out_buf.to(torch.float)
         # avoid walls
-        wall_penalty = None
+        wall_penalty = []
         for wall_num in range(4):
-            if wall_penalty is None:
-                wall_penalty =  torch.norm(self.root_states[self.num_actors_per_env * env_ids + wall_num + 1,0:3] - self.goals)
-            else:
-                wall_penalty += torch.norm(self.root_states[self.num_actors_per_env * env_ids + wall_num + 1,0:3] - self.goals)
+            wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + wall_num + 1,0:3] - self.goals,keepdim=True,dim=1))
+        
+        wall_penalty =  torch.min(torch.stack(wall_penalty, axis=1),axis=1)[0].squeeze(1)
+        # wall_penalty -= 0.5
+        wall_penalty = 1/(wall_penalty)
 
-        self.rew_buf[not success] = task_reward * torch.exp(-0.01*(timeout_penalty * 0.001 + wall_penalty * 0.003 ))
+        self.rew_buf = (task_reward + success * 0.2 ) * torch.exp( - (wall_penalty + timeout_penalty * 2)*0.2)
 
         self.episode_sums["goal_distance"] = torch.cat([self.episode_sums["goal_distance"],torch.norm(robot_pos[:,:1] - self.goals[:,:1],dim=1, keepdim=True)],dim=1)
         self.episode_sums["timeouts"] += timeout_penalty
