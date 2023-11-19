@@ -294,17 +294,37 @@ class World(Navigator):
     def compute_reward(self):
         self.rew_buf[:] = 0
         env_ids = torch.arange(self.num_envs)
-        self.rew_buf = (self.root_states[self.num_actors_per_env * env_ids,0:1] - self.goals[:,0:1])[:,0]
-        self.rew_buf -= 2 * torch.abs(self.init_root_states[:,1] - self.root_states[self.num_actors_per_env* env_ids, 1])
-        self.rew_buf += -10 * self.time_out_buf
+        robot_pos = self.root_states[self.num_actors_per_env * env_ids,0:3]
+        
+        # reward structure (+ve main task) * exp(negative auxiliary rewards)
 
-        self.episode_sums["goal_reward"] += (self.root_states[self.num_actors_per_env * env_ids,0:1] - self.goals[:,0:1])[:,0]
-        init_root_states_column = self.init_root_states[:, 1].unsqueeze(1)
-        penalty = -2 * torch.abs(init_root_states_column - self.root_states[self.num_actors_per_env * env_ids, :])
-        #self.episode_sums["wall_penalty"] += -2 * torch.abs(self.init_root_states[:,1] - self.root_states[self.num_actors_per_env* env_ids, ])
-        self.episode_sums["wall_penalty"] += penalty.sum()
-        self.episode_sums["timeout_penalty"] += -10 * self.time_out_buf
-        self.episode_sums["total"] += self.rew_buf
+        # going to the wall
+        task_reward = torch.exp(-1 * torch.norm(robot_pos[:,0:1] - self.goals[:,0]))
+
+        # auxiliary rewards
+        # avoiding timeouts
+        timeout_penalty = self.time_out_buf.astype(torch.int)
+        # avoid walls
+        wall_penalty = None
+        for wall_num in range(4):
+            if wall_penalty is None:
+                wall_penalty =  torch.norm(self.root_states[self.num_actors_per_env * env_ids + wall_num + 1,0:3] - self.goals)
+            else:
+                wall_penalty += torch.norm(self.root_states[self.num_actors_per_env * env_ids + wall_num + 1,0:3] - self.goals)
+
+        self.rew_buf = task_reward * torch.exp(-0.1*(timeout_penalty * 0.01 + wall_penalty * 0.03 ))
+        
+        # self.rew_buf = (self.root_states[self.num_actors_per_env * env_ids,0:1] - self.goals[:,0:1])[:,0]
+        # self.rew_buf -= 2 * torch.abs(self.init_root_states[:,1] - self.root_states[self.num_actors_per_env* env_ids, 1])
+        # self.rew_buf += -10 * self.time_out_buf
+
+        # self.episode_sums["goal_reward"] += (self.root_states[self.num_actors_per_env * env_ids,0:1] - self.goals[:,0:1])[:,0]
+        # init_root_states_column = self.init_root_states[:, 1].unsqueeze(1)
+        # penalty = -2 * torch.abs(init_root_states_column - self.root_states[self.num_actors_per_env * env_ids, :])
+        # #self.episode_sums["wall_penalty"] += -2 * torch.abs(self.init_root_states[:,1] - self.root_states[self.num_actors_per_env* env_ids, ])
+        # self.episode_sums["wall_penalty"] += penalty.sum()
+        # self.episode_sums["timeout_penalty"] += -10 * self.time_out_buf
+        # self.episode_sums["total"] += self.rew_buf
 
     def check_termination(self):
         self.time_out_buf = self.episode_length_buf > self.cfg.env.max_episode_length
