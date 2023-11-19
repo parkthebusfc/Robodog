@@ -48,8 +48,8 @@ class RunnerArgs(PrefixProto, cli=False):
     max_iterations = 1500  # number of policy updates
 
     # logging
-    save_interval = 400  # check for potential saves every this many iterations
-    save_video_interval = 100
+    save_interval = 100  # check for potential saves every this many iterations
+    save_video_interval = 10
     log_freq = 10
 
     # load and resume
@@ -68,7 +68,6 @@ class Runner:
         self.env = env
 
         actor_critic = ActorCritic_Nav(self.env.nav_obs_len,
-                                      
                                       self.env.num_nav_obs_history,
                                       self.env.num_actions,
                                       ).to(self.device)

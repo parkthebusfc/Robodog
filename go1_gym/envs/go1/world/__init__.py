@@ -141,14 +141,14 @@ class World(Navigator):
             ## Adding walls
             offset = [
                 (1.5,1,1),
-                (3.5,0,1),
+                (4.0,0,1),
                 (1.5,-1,1),
-                (-0.5,0,1),
+                (-1.0,0,1),
             ]
             dimensions = [
-                (4,0.12,2.0),
+                (5,0.12,2.0),
                 (0.12,2.0,2.0),
-                (4.0,0.12,2.0),
+                (5.0,0.12,2.0),
                 (0.12,2.0,2.0),
             ]
             
@@ -264,6 +264,13 @@ class World(Navigator):
             self.root_states[self.num_actors_per_env * env_ids, :3] += self.env_origins[env_ids]
         
         self.update_goals(env_ids)
+
+        if self.viewer:
+            points = []
+            for g in self.goals:
+                points.extend((g + torch.Tensor([0,-1,0]).to(g.device)).tolist())
+                points.extend((g + torch.Tensor([0,1,0]).to(g.device)).tolist())
+            self.gym.add_lines(self.viewer,self.envs[0],self.num_envs,np.array(points,dtype=np.float32),np.array([[0,0,1.0] for _ in range(self.num_envs)]).reshape((-1)).astype(np.float32))
         # base yaws
         init_yaws = torch_rand_float(-cfg.terrain.yaw_init_range,
                                      cfg.terrain.yaw_init_range, (len(env_ids), 1),
@@ -286,7 +293,7 @@ class World(Navigator):
 
         if cfg.env.record_video:
             bx, by, bz = self.root_states[0, 0], self.root_states[0, 1], self.root_states[0, 2]
-            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx + 3.5, by, bz + 4.0),
+            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx + 4.0, by, bz + 4.0),
                                          gymapi.Vec3(bx + 1.5, by, bz))
 
         if cfg.env.record_video and 0 in env_ids:
@@ -305,13 +312,17 @@ class World(Navigator):
     
     def compute_reward(self):
         self.rew_buf[:] = 0
-        env_ids = torch.arange(self.num_envs)
+        env_ids = torch.arange(self.num_envs)  
         robot_pos = self.root_states[self.num_actors_per_env * env_ids,0:3]
+
+        success = robot_pos[:,0] >= self.goals[:,0]
+        task_reward = torch.norm(robot_pos[:,0:1] - self.goals[:,0])
+
+        self.rew_buf[success] = 1000
         
         # reward structure (+ve main task) * exp(negative auxiliary rewards)
 
         # going to the wall
-        task_reward = torch.exp(-1 * torch.norm(robot_pos[:,0:1] - self.goals[:,0]))
 
         # auxiliary rewards
         # avoiding timeouts
@@ -324,12 +335,12 @@ class World(Navigator):
             else:
                 wall_penalty += torch.norm(self.root_states[self.num_actors_per_env * env_ids + wall_num + 1,0:3] - self.goals)
 
-        self.rew_buf = task_reward * torch.exp(-0.1*(timeout_penalty * 0.01 + wall_penalty * 0.03 ))
+        self.rew_buf[not success] = task_reward * torch.exp(-0.01*(timeout_penalty * 0.001 + wall_penalty * 0.003 ))
 
         self.episode_sums["goal_distance"] = torch.cat([self.episode_sums["goal_distance"],torch.norm(robot_pos[:,:1] - self.goals[:,:1],dim=1, keepdim=True)],dim=1)
         self.episode_sums["timeouts"] += timeout_penalty
         self.episode_sums["total_reward"] += self.rew_buf
-        self.episode_sums["successes"] += (self.root_states[self.num_actors_per_env * env_ids, 0] > self.goals[:, 0]).to(torch.float)
+        self.episode_sums["successes"] += (success).to(torch.float)
 
     def check_termination(self):
         self.time_out_buf = self.episode_length_buf > self.cfg.env.max_episode_length

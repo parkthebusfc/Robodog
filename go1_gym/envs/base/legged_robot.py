@@ -1684,7 +1684,7 @@ class LeggedRobot(BaseTask):
             Otherwise create a grid.
         """
         if cfg.terrain.mesh_type in ["heightfield", "trimesh"]:
-            self.custom_origins = True
+            self.custom_origins = False
             # put robots at the origins defined by the terrain
             max_init_level = cfg.terrain.max_init_terrain_level
             min_init_level = cfg.terrain.min_init_terrain_level
