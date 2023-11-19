@@ -42,9 +42,6 @@ class Navigator(VelocityTrackingEasyEnv):
         self.nav_obs_history = torch.zeros(self.num_envs, self.num_nav_obs_history, dtype=torch.float,
                                         device=self.device, requires_grad=False)
 
-        
-        
-
     def _resample_commands(self, env_ids):
         self.commands[env_ids, 3] = self.behavior["body_height"]
         self.commands[env_ids, 4] = self.behavior["step_frequency"]
@@ -70,7 +67,7 @@ class Navigator(VelocityTrackingEasyEnv):
         self.locomotion_policy = policy
     
     def velocity_step(self, actions):
-        return super().step(actions=actions)
+        return super(VelocityTrackingEasyEnv, self).step(actions=actions)
 
     def get_observation_buffer(self):
         return self.obs_buf
@@ -92,7 +89,7 @@ class Navigator(VelocityTrackingEasyEnv):
         
         obs = self.get_observations()
         locomotion_actions = self.locomotion_policy(obs)
-        obs, rew, done, info = self.velocity_step(locomotion_actions)
+        obs, _, rew, done, info = self.velocity_step(locomotion_actions)
         # update obs
        # obs_reqd = torch.cat((self.base_pos, self.base_lin_vel, self.base_quat), dim=-1) 
 
@@ -100,7 +97,7 @@ class Navigator(VelocityTrackingEasyEnv):
         nav_obs_reqd = torch.cat((self.base_pos, self.base_lin_vel, self.base_quat), dim=-1)
         self.nav_obs_history = torch.cat((self.nav_obs_history[:,self.nav_obs_len:], nav_obs_reqd),dim=-1)
 
-        return {'obs': obs, 'obs_history': self.obs_history, 'obs_nav': nav_obs_reqd, 'nav_obs_history': self.nav_obs_history}, rew, done, info
+        return {'obs': obs, 'obs_history': self.obs_history, 'obs_nav': nav_obs_reqd, 'nav_obs_history': self.nav_obs_history}, rew, done, self.extras
 
     def reset_idx(self, env_ids):  # it might be a problem that this isn't getting called!!
         ret = super().reset_idx(env_ids)
@@ -109,6 +106,7 @@ class Navigator(VelocityTrackingEasyEnv):
     
     def reset(self):
         #self.reset_idx(torch.arange(self.num_envs, device=self.device))
-        obs = super().reset()
+        self.reset_idx(torch.arange(self.num_envs, device=self.device))
+        self.step(torch.zeros(self.num_envs, self.num_actions, device=self.device, requires_grad=False))
         obs_reqd = torch.cat((self.base_pos, self.base_lin_vel, self.base_quat), dim=-1) 
         return obs_reqd
