@@ -329,7 +329,7 @@ class World(Navigator):
         self.episode_sums["goal_distance"] = torch.cat([self.episode_sums["goal_distance"],torch.norm(robot_pos[:,:1] - self.goals[:,:1],dim=1, keepdim=True)],dim=1)
         self.episode_sums["timeouts"] += timeout_penalty
         self.episode_sums["total_reward"] += self.rew_buf
-        self.episode_sums["successes"] += (self.root_states[self.num_actors_per_env * env_ids, :1] > self.goals[:, :1]).to(torch.float)
+        self.episode_sums["successes"] += (self.root_states[self.num_actors_per_env * env_ids, 0] > self.goals[:, 0]).to(torch.float)
 
     def check_termination(self):
         self.time_out_buf = self.episode_length_buf > self.cfg.env.max_episode_length
