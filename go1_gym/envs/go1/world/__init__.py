@@ -27,6 +27,8 @@ class World(Navigator):
     def _init_buffers(self):
         super()._init_buffers()
         self.update_goals(torch.arange(self.num_envs, device=self.device))
+        self.prev_robot_velocities = torch.zeros((self.num_envs, 3), device=self.device, dtype=torch.float32)
+        self.curr_robot_velocities = torch.zeros((self.num_envs, 3), device=self.device, dtype=torch.float32)
 
     def _create_envs(self):
         """ Creates environments:
@@ -333,30 +335,28 @@ class World(Navigator):
     def compute_reward(self):
         self.rew_buf[:] = 0
         env_ids = torch.arange(self.num_envs)  
-        robot_pos = self.root_states[self.num_actors_per_env * env_ids,0:3]
-
-        success = robot_pos[:,0] >= self.goals[:,0]        
+        robot_pos = self.root_states[self.num_actors_per_env * env_ids,0:3]    
         # reward structure (+ve main task) * exp(negative auxiliary rewards)
-        task_reward =   torch.exp(-torch.square(robot_pos[:,0] - self.goals[:,0]) / 6)
-        # auxiliary rewards
-        # avoiding timeouts
-        timeout_penalty = self.time_out_buf.to(torch.float)
+        task_reward = 1/(1+ torch.abs((robot_pos[:,0] - self.goals[:,0])))
+        # time penalty
+        time_penalty = -0.02 * (torch.exp(0.005*self.episode_length_buf) -1 )
         # avoid walls
         wall_penalty = []
-        
         wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 1,1:2] - self.goals[:,1:2],keepdim=True,dim=1))
         wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 3,1:2] - self.goals[:,1:2],keepdim=True,dim=1))
         wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 2,0:1] - self.goals[:,0:1],keepdim=True,dim=1))
         wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 4,0:1] - self.goals[:,0:1],keepdim=True,dim=1))
-        
         wall_penalty =  torch.min(torch.stack(wall_penalty, axis=1),axis=1)[0].squeeze(1)
-        wall_penalty = torch.exp( - (wall_penalty-0.25)*14)
-        self.rew_buf = (task_reward * 0.2 + success * 0.2 ) * torch.exp( - wall_penalty * 0.3 - timeout_penalty * 0.2) * 0.01
+        wall_penalty = -0.05* 1/ (1+torch.abs(wall_penalty))
+
+        # Smoothness reward
+        smoothness_reward = 0.0003 * 1/(1+torch.norm(self.curr_robot_velocities - self.prev_robot_velocities, dim=1))
+        self.rew_buf = task_reward + smoothness_reward + wall_penalty + time_penalty
 
         self.episode_sums["goal_distance"] = torch.cat([self.episode_sums["goal_distance"],torch.norm(robot_pos[:,:1] - self.goals[:,:1],dim=1, keepdim=True)],dim=1)
-        self.episode_sums["timeouts"] += timeout_penalty
+        self.episode_sums["timeouts"] += self.time_out_buf.to(torch.float32)
         self.episode_sums["total_reward"] += self.rew_buf
-        self.episode_sums["successes"] += (success).to(torch.float)
+        self.episode_sums["successes"] += (robot_pos[:,0] >= self.goals[:,0]).to(torch.float)
 
     def check_termination(self):
         self.time_out_buf = self.episode_length_buf > self.cfg.env.max_episode_length
@@ -377,6 +377,7 @@ class World(Navigator):
         cfg.env.episode_length_s = 750 * self.dt
         super()._parse_cfg(cfg)
 
-        
-
-        
+    def step(self, cmd):
+        self.prev_robot_velocities = torch.clone(self.curr_robot_velocities)
+        self.curr_robot_velocities = torch.clone(cmd)
+        return super().step(cmd)

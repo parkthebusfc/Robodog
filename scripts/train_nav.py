@@ -52,7 +52,7 @@ def train_nav(headless=True):
     Cfg.domain_rand.randomize_com_displacement = False
 
     Cfg.env.num_recording_envs = 1
-    Cfg.env.num_envs = 2
+    Cfg.env.num_envs = 256
     Cfg.terrain.border_size = 0
     Cfg.terrain.center_robots = True
     Cfg.terrain.center_span = 1
@@ -62,6 +62,10 @@ def train_nav(headless=True):
     Cfg.domain_rand.lag_timesteps = 6
     Cfg.domain_rand.randomize_lag_timesteps = True
     Cfg.control.control_type = "actuator_net"
+
+    Cfg.commands.limit_vel_x = [-1.0,1.0]
+    Cfg.commands.limit_vel_y = [-1.0,1.0]
+    Cfg.commands.limit_vel_yaw = [-1.0,1.0]
 
     from go1_gym.envs.wrappers.history_wrapper_nav import HistoryWrapper
 
