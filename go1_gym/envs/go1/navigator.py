@@ -12,6 +12,9 @@ import math
 from go1_gym.envs.go1.velocity_tracking import VelocityTrackingEasyEnv
 from go1_gym.envs.base.legged_robot_config import Cfg
 
+import nvidia_smi
+nvidia_smi.nvmlInit()
+
 class Navigator(VelocityTrackingEasyEnv):
     def __init__(self, sim_device, headless, num_envs=None, prone=False, deploy=False,
                     cfg: Cfg = None, eval_cfg: Cfg = None, initial_dynamics_dict=None, physics_engine="SIM_PHYSX", locomtion_model_dir = "../runs/gait-conditioned-agility/2023-11-03/train/210513.245978", behavior_commands = {
@@ -80,7 +83,15 @@ class Navigator(VelocityTrackingEasyEnv):
 
         return {'obs': obs, 'obs_history': self.obs_history, 'obs_nav': nav_obs_reqd , 'nav_obs_history': self.nav_obs_history}
     
-    
+    def print_gpu_stats(self):
+        deviceCount = nvidia_smi.nvmlDeviceGetCount()
+        for i in range(deviceCount):
+            handle = nvidia_smi.nvmlDeviceGetHandleByIndex(i)
+            util = nvidia_smi.nvmlDeviceGetUtilizationRates(handle)
+            mem = nvidia_smi.nvmlDeviceGetMemoryInfo(handle)
+            print(f"|Device {i}| Mem Free: {mem.free/1024**2:5.2f}MB / {mem.total/1024**2:5.2f}MB | gpu-util: {util.gpu:3.1%} | gpu-mem: {util.memory:3.1%} |")
+
+
 
     def step(self, cmd):
         # cmds are the velocities that nav policy outputs

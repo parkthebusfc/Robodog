@@ -15,6 +15,9 @@ from go1_gym_learn.ppo_nav import Runner
 
 from tqdm import tqdm
 
+import os
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+
 def train_nav(headless=True):
     # dirs = glob.glob(f"../runs/{label}/*")
     # logdir = sorted(dirs)[0]
@@ -49,9 +52,7 @@ def train_nav(headless=True):
     Cfg.domain_rand.randomize_com_displacement = False
 
     Cfg.env.num_recording_envs = 1
-    Cfg.env.num_envs = 1
-    Cfg.terrain.num_rows = 5
-    Cfg.terrain.num_cols = 5
+    Cfg.env.num_envs = 2
     Cfg.terrain.border_size = 0
     Cfg.terrain.center_robots = True
     Cfg.terrain.center_span = 1
@@ -75,5 +76,4 @@ def train_nav(headless=True):
 
 if __name__ == '__main__':
     # to see the environment rendering, set headless=False
-    
     train_nav(headless=True)

@@ -24,6 +24,10 @@ class World(Navigator):
         self.goals = self.root_states[self.num_actors_per_env * env_ids, :3]
         self.goals[:, 0:1] += 3 * torch.ones((len(env_ids), 1)).to(self.goals.device)
 
+    def _init_buffers(self):
+        super()._init_buffers()
+        self.update_goals(torch.arange(self.num_envs, device=self.device))
+
     def _create_envs(self):
         """ Creates environments:
              1. loads the robot URDF/MJCF asset,
@@ -205,6 +209,24 @@ class World(Navigator):
         self.complete_video_frames = []
         self.complete_video_frames_eval = []
 
+    def _reset_dofs(self, env_ids, cfg):
+        """ Resets DOF position and velocities of selected environmments
+        Positions are randomly selected within 0.5:1.5 x default positions.
+        Velocities are set to zero.
+
+        Args:
+            env_ids (List[int]): Environemnt ids
+        """
+        robot_index = env_ids*self.num_actors_per_env
+        self.dof_pos[env_ids] = self.default_dof_pos * torch_rand_float(0.5, 1.5, (len(env_ids), self.num_dof),
+                                                                        device=self.device)
+        self.dof_vel[env_ids] = 0.
+
+        env_ids_int32 = robot_index.to(dtype=torch.int32)
+        self.gym.set_dof_state_tensor_indexed(self.sim,
+                                              gymtorch.unwrap_tensor(self.dof_state),
+                                              gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
+
     def reset_idx(self, env_ids):
 
         if len(env_ids) == 0:
@@ -263,8 +285,6 @@ class World(Navigator):
             self.root_states[self.num_actors_per_env * env_ids] = self.base_init_state
             self.root_states[self.num_actors_per_env * env_ids, :3] += self.env_origins[env_ids]
         
-        self.update_goals(env_ids)
-
         if self.viewer:
             points = []
             for g in self.goals:
@@ -331,7 +351,7 @@ class World(Navigator):
         
         wall_penalty =  torch.min(torch.stack(wall_penalty, axis=1),axis=1)[0].squeeze(1)
         wall_penalty = torch.exp( - (wall_penalty-0.25)*14)
-        self.rew_buf = (task_reward * 0.2 + success * 0.2 ) * torch.exp( - wall_penalty * 0.3 - timeout_penalty * 0.2)
+        self.rew_buf = (task_reward * 0.2 + success * 0.2 ) * torch.exp( - wall_penalty * 0.3 - timeout_penalty * 0.2) * 0.01
 
         self.episode_sums["goal_distance"] = torch.cat([self.episode_sums["goal_distance"],torch.norm(robot_pos[:,:1] - self.goals[:,:1],dim=1, keepdim=True)],dim=1)
         self.episode_sums["timeouts"] += timeout_penalty
