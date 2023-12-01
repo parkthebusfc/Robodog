@@ -52,7 +52,7 @@ def train_nav(headless=True):
     Cfg.domain_rand.randomize_com_displacement = False
 
     Cfg.env.num_recording_envs = 1
-    Cfg.env.num_envs = 256
+    Cfg.env.num_envs = 128
     Cfg.terrain.border_size = 0
     Cfg.terrain.center_robots = True
     Cfg.terrain.center_span = 1
@@ -69,11 +69,11 @@ def train_nav(headless=True):
 
     from go1_gym.envs.wrappers.history_wrapper_nav import HistoryWrapper
 
+    #training
+    gpu_id = 0  
     #env = VelocityTrackingEasyEnv(sim_device='cuda:0', headless=headless, cfg=Cfg)
-    env = World(sim_device='cuda:0',headless=headless, cfg=Cfg, locomtion_model_dir= logdir)
+    env = World(sim_device=f'cuda:{gpu_id}',headless=headless, cfg=Cfg, locomtion_model_dir= logdir)
 
-    #training 
-    gpu_id = 0
     runner = Runner(env, device=f"cuda:{gpu_id}")
     runner.learn(num_learning_iterations=30000, init_at_random_ep_len=True, eval_freq=100)
 

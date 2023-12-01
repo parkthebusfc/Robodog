@@ -314,7 +314,7 @@ class World(Navigator):
             raise SystemError("Could not set necessary transforms")
 
         if cfg.env.record_video:
-            bx, by, bz = self.root_states[0, 0], self.root_states[0, 1], self.root_states[0, 2]
+            bx, by, bz = self.env_origins[0]
             self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx + 4.0, by, bz + 4.0),
                                          gymapi.Vec3(bx + 1.5, by, bz))
 
@@ -337,20 +337,20 @@ class World(Navigator):
         env_ids = torch.arange(self.num_envs)  
         robot_pos = self.root_states[self.num_actors_per_env * env_ids,0:3]    
         # reward structure (+ve main task) * exp(negative auxiliary rewards)
-        task_reward = 1/(1+ torch.abs((robot_pos[:,0] - self.goals[:,0])))
+        task_reward = 1/(0.2+ torch.abs((robot_pos[:,0] - self.goals[:,0])))
         # time penalty
         time_penalty = -0.02 * (torch.exp(0.005*self.episode_length_buf) -1 )
         # avoid walls
         wall_penalty = []
-        wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 1,1:2] - self.goals[:,1:2],keepdim=True,dim=1))
-        wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 3,1:2] - self.goals[:,1:2],keepdim=True,dim=1))
-        wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 2,0:1] - self.goals[:,0:1],keepdim=True,dim=1))
-        wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 4,0:1] - self.goals[:,0:1],keepdim=True,dim=1))
+        wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 1,1:2] - robot_pos[:,1:2],keepdim=True,dim=1))
+        wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 3,1:2] - robot_pos[:,1:2],keepdim=True,dim=1))
+        wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 2,0:1] - robot_pos[:,0:1],keepdim=True,dim=1))
+        wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 4,0:1] - robot_pos[:,0:1],keepdim=True,dim=1))
         wall_penalty =  torch.min(torch.stack(wall_penalty, axis=1),axis=1)[0].squeeze(1)
-        wall_penalty = -0.05* 1/ (1+torch.abs(wall_penalty))
+        wall_penalty = -0.05* 1/ (0.05+torch.abs(wall_penalty))
 
         # Smoothness reward
-        smoothness_reward = 0.0003 * 1/(1+torch.norm(self.curr_robot_velocities - self.prev_robot_velocities, dim=1))
+        smoothness_reward = 0.5 * 1/(1+torch.norm(self.curr_robot_velocities - self.prev_robot_velocities, dim=1))
         self.rew_buf = task_reward + smoothness_reward + wall_penalty + time_penalty
 
         self.episode_sums["goal_distance"] = torch.cat([self.episode_sums["goal_distance"],torch.norm(robot_pos[:,:1] - self.goals[:,:1],dim=1, keepdim=True)],dim=1)
