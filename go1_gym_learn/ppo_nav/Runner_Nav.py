@@ -7,7 +7,7 @@ import torch
 from ml_logger import logger
 from params_proto import PrefixProto
 
-from .actor_critic_nav import ActorCritic_Nav
+from .actor_critic_nav import ActorCritic
 from .rollout_storage_nav import RolloutStorage
 from .ppo_nav import PPO
 
@@ -48,8 +48,8 @@ class RunnerArgs(PrefixProto, cli=False):
     max_iterations = 1500  # number of policy updates
 
     # logging
-    save_interval = 100  # check for potential saves every this many iterations
-    save_video_interval = 10
+    save_interval = 400  # check for potential saves every this many iterations
+    save_video_interval = 100
     log_freq = 10
 
     # load and resume
@@ -67,8 +67,9 @@ class Runner:
         self.device = device
         self.env = env
 
-        actor_critic = ActorCritic_Nav(self.env.nav_obs_len,
-                                      self.env.num_nav_obs_history,
+        actor_critic = ActorCritic(self.env.num_obs,
+                                      
+                                      self.env.num_obs_history,
                                       self.env.num_actions,
                                       ).to(self.device)
 
@@ -94,7 +95,7 @@ class Runner:
 
         # init storage and model
         self.alg.init_storage(self.env.num_train_envs, self.num_steps_per_env, [self.env.nav_obs_len],
-                               [self.env.num_nav_obs_history], [self.env.num_actions])
+                               [self.env.nav_obs_history_len], [self.env.num_actions])
 
         self.tot_timesteps = 0
         self.tot_time = 0
@@ -118,9 +119,16 @@ class Runner:
         num_train_envs = self.env.num_train_envs
 
         obs_dict = self.env.get_observations()  # TODO: check, is this correct on the first step?
-        obs,  obs_history, obs_nav , nav_obs_history = obs_dict["obs"], obs_dict["obs_history"], obs_dict["obs_nav"] , obs_dict["nav_obs_history"]
-        obs,  obs_history, obs_nav , nav_obs_history = obs.to(self.device), obs_history.to(self.device), obs_nav.to(self.device) , nav_obs_history.to(self.device)
+        obs,  obs_history = obs_dict["obs"], obs_dict["obs_history"]
+        obs,  obs_history = obs.to(self.device), obs_history.to(self.device)
         self.alg.actor_critic.train()  # switch to train mode (for dropout for example)
+
+        rewbuffer = deque(maxlen=100)
+        lenbuffer = deque(maxlen=100)
+        rewbuffer_eval = deque(maxlen=100)
+        lenbuffer_eval = deque(maxlen=100)
+        cur_reward_sum = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
+        cur_episode_length = torch.zeros(self.env.num_envs, dtype=torch.float, device=self.device)
 
         tot_iter = self.current_learning_iteration + num_learning_iterations
         for it in range(self.current_learning_iteration, tot_iter):
@@ -128,14 +136,18 @@ class Runner:
             # Rollout
             with torch.inference_mode():
                 for i in range(self.num_steps_per_env):
-                    actions_train = self.alg.act(obs_nav[:num_train_envs], 
-                                                 nav_obs_history[:num_train_envs])
+                    actions_train = self.alg.act(obs[:num_train_envs], 
+                                                 obs_history[:num_train_envs])
+                    # if eval_expert:
+                    #     actions_eval = self.alg.actor_critic.act_teacher(obs_history[num_train_envs:])
+                    # else:
+                    #     actions_eval = self.alg.actor_critic.act_student(obs_history[num_train_envs:])
                     ret = self.env.step(actions_train)
                     obs_dict, rewards, dones, infos = ret
-                    obs,  obs_history , obs_nav , nav_obs_history = obs_dict["obs"], obs_dict[
-                        "obs_history"], obs_dict["obs_nav"] , obs_dict["nav_obs_history"]
+                    obs,  obs_history = obs_dict["obs"], obs_dict[
+                        "obs_history"]
 
-                    obs,  obs_history, obs_nav,nav_obs_history, rewards, dones = obs.to(self.device),  obs_history.to(self.device), obs_nav.to(self.device),nav_obs_history.to(self.device), rewards.to(self.device), dones.to(self.device)
+                    obs,  obs_history, rewards, dones = obs.to(self.device),  obs_history.to(self.device), rewards.to(self.device), dones.to(self.device)
                     self.alg.process_env_step(rewards[:num_train_envs], dones[:num_train_envs], infos)
 
                     if 'train/episode' in infos:
@@ -146,12 +158,45 @@ class Runner:
                         with logger.Prefix(metrics="eval/episode"):
                             logger.store_metrics(**infos['eval/episode'])
 
+                    # if 'curriculum' in infos:
+
+                    #     cur_reward_sum += rewards
+                    #     cur_episode_length += 1
+
+                    #     new_ids = (dones > 0).nonzero(as_tuple=False)
+
+                    #     new_ids_train = new_ids[new_ids < num_train_envs]
+                    #     rewbuffer.extend(cur_reward_sum[new_ids_train].cpu().numpy().tolist())
+                    #     lenbuffer.extend(cur_episode_length[new_ids_train].cpu().numpy().tolist())
+                    #     cur_reward_sum[new_ids_train] = 0
+                    #     cur_episode_length[new_ids_train] = 0
+
+                    #     new_ids_eval = new_ids[new_ids >= num_train_envs]
+                    #     rewbuffer_eval.extend(cur_reward_sum[new_ids_eval].cpu().numpy().tolist())
+                    #     lenbuffer_eval.extend(cur_episode_length[new_ids_eval].cpu().numpy().tolist())
+                    #     cur_reward_sum[new_ids_eval] = 0
+                    #     cur_episode_length[new_ids_eval] = 0
+
+                    # if 'curriculum/distribution' in infos:
+                    #     distribution = infos['curriculum/distribution']
+
                 stop = time.time()
                 collection_time = stop - start
 
                 # Learning step
                 start = stop
-                self.alg.compute_returns(nav_obs_history[:num_train_envs])
+                self.alg.compute_returns(obs_history[:num_train_envs])
+
+                # if it % curriculum_dump_freq == 0:
+                #     logger.save_pkl({"iteration": it,
+                #                      **caches.slot_cache.get_summary(),
+                #                      **caches.dist_cache.get_summary()},
+                #                     path=f"curriculum/info.pkl", append=True)
+
+                #     if 'curriculum/distribution' in infos:
+                #         logger.save_pkl({"iteration": it,
+                #                          "distribution": distribution},
+                #                          path=f"curriculum/distribution.pkl", append=True)
 
             mean_value_loss, mean_surrogate_loss,  mean_decoder_loss, mean_decoder_loss_student, mean_decoder_test_loss, mean_decoder_test_loss_student = self.alg.update()
             stop = time.time()
@@ -189,6 +234,11 @@ class Runner:
 
                     os.makedirs(path, exist_ok=True)
 
+                    # adaptation_module_path = f'{path}/adaptation_module_latest.jit'
+                    # adaptation_module = copy.deepcopy(self.alg.actor_critic.adaptation_module).to('cpu')
+                    # traced_script_adaptation_module = torch.jit.script(adaptation_module)
+                    # traced_script_adaptation_module.save(adaptation_module_path)
+
                     body_path = f'{path}/body_latest.jit'
                     body_model = copy.deepcopy(self.alg.actor_critic.actor_body).to('cpu')
                     traced_script_body_module = torch.jit.script(body_model)
@@ -206,6 +256,12 @@ class Runner:
             path = './tmp/legged_data'
 
             os.makedirs(path, exist_ok=True)
+
+            # adaptation_module_path = f'{path}/adaptation_module_latest.jit'
+            # adaptation_module = copy.deepcopy(self.alg.actor_critic.adaptation_module).to('cpu')
+            # traced_script_adaptation_module = torch.jit.script(adaptation_module)
+            # traced_script_adaptation_module.save(adaptation_module_path)
+
             body_path = f'{path}/body_latest.jit'
             body_model = copy.deepcopy(self.alg.actor_critic.actor_body).to('cpu')
             traced_script_body_module = torch.jit.script(body_model)
@@ -236,3 +292,14 @@ class Runner:
                 print("LOGGING EVAL VIDEO")
                 logger.save_video(frames, f"videos/{it:05d}_eval.mp4", fps=1 / self.env.dt)
 
+    # def get_inference_policy(self, device=None):
+    #     self.alg.actor_critic.eval()  # switch to evaluation mode (dropout for example)
+    #     if device is not None:
+    #         self.alg.actor_critic.to(device)
+    #     return self.alg.actor_critic.act_inference
+
+    # def get_expert_policy(self, device=None):
+    #     self.alg.actor_critic.eval()  # switch to evaluation mode (dropout for example)
+    #     if device is not None:
+    #         self.alg.actor_critic.to(device)
+    #     return self.alg.actor_critic.act_expert

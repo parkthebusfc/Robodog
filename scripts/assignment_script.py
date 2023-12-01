@@ -94,7 +94,7 @@ def load_env(label, headless=False):
 
     from go1_gym.envs.wrappers.history_wrapper import HistoryWrapper
 
-    env = World(sim_device='cuda:0', headless=headless, cfg=Cfg)
+    env = VelocityTrackingEasyEnv(sim_device='cuda:0', headless=headless, cfg=Cfg)
     env = HistoryWrapper(env)
 
     # load policy
@@ -164,7 +164,7 @@ def play_go1(headless=True):
 
     observed_vels = None
     command_vels_array = None
-    steps_each = 1000
+    steps_each = 200
     command_vels = [[0,0.5,0]]
     num_eval_steps = 0
     for cmd in command_vels:

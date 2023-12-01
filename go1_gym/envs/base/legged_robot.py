@@ -265,7 +265,6 @@ class LeggedRobot(BaseTask):
             Calls each reward function which had a non-zero scale (processed in self._prepare_reward_function())
             adds each terms to the episode sums and to the total reward
         """
-        print("Called from Velocity Tracking")
         self.rew_buf[:] = 0.
         self.rew_buf_pos[:] = 0.
         self.rew_buf_neg[:] = 0.
@@ -1005,13 +1004,10 @@ class LeggedRobot(BaseTask):
 
         if cfg.env.record_video:
             bx, by, bz = self.root_states[0, 0], self.root_states[0, 1], self.root_states[0, 2]
-            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx, by - 4.0, bz + 3.0),
-                                         gymapi.Vec3(bx, by, bz))
+            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx + 5, by, bz + 6.0),
+                                         gymapi.Vec3(bx + 1.5, by, bz))
 
         if cfg.env.record_video and 0 in env_ids:
-            bx, by, bz = self.root_states[0, 0], self.root_states[0, 1], self.root_states[0, 2]
-            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx, by - 3.0, bz + 3.0),
-                                         gymapi.Vec3(bx, by, bz))
             if self.complete_video_frames is None:
                 self.complete_video_frames = []
             else:
@@ -1688,7 +1684,7 @@ class LeggedRobot(BaseTask):
             Otherwise create a grid.
         """
         if cfg.terrain.mesh_type in ["heightfield", "trimesh"]:
-            self.custom_origins = True
+            self.custom_origins = False
             # put robots at the origins defined by the terrain
             max_init_level = cfg.terrain.max_init_terrain_level
             min_init_level = cfg.terrain.min_init_terrain_level

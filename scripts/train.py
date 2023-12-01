@@ -229,23 +229,11 @@ if __name__ == '__main__':
                 charts: 
                 - yKey: train/episode/rew_total/mean
                   xKey: iterations
-                - yKey: train/episode/rew_tracking_lin_vel/mean
+                - yKey: train/episode/rew_goal_reward/mean
                   xKey: iterations
-                - yKey: train/episode/rew_tracking_contacts_shaped_force/mean
+                - yKey: train/episode/rew_wall_penalty/mean
                   xKey: iterations
-                - yKey: train/episode/rew_action_smoothness_1/mean
-                  xKey: iterations
-                - yKey: train/episode/rew_action_smoothness_2/mean
-                  xKey: iterations
-                - yKey: train/episode/rew_tracking_contacts_shaped_vel/mean
-                  xKey: iterations
-                - yKey: train/episode/rew_orientation_control/mean
-                  xKey: iterations
-                - yKey: train/episode/rew_dof_pos/mean
-                  xKey: iterations
-                - yKey: train/episode/command_area_trot/mean
-                  xKey: iterations
-                - yKey: train/episode/max_terrain_height/mean
+                - yKey: train/episode/rew_timeout_penalty/mean
                   xKey: iterations
                 - type: video
                   glob: "videos/*.mp4"

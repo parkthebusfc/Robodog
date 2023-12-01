@@ -91,10 +91,10 @@ def load_env(label, headless=False):
     Cfg.domain_rand.randomize_lag_timesteps = True
     Cfg.control.control_type = "actuator_net"
 
-    from go1_gym.envs.wrappers.history_wrapper import HistoryWrapper
+    from go1_gym.envs.wrappers.history_wrapper_nav import HistoryWrapper
 
     #env = VelocityTrackingEasyEnv(sim_device='cuda:0', headless=headless, cfg=Cfg)
-    env = WallControlEnv(sim_device='cuda:0',headless=headless, cfg=Cfg)
+    env = World(sim_device='cuda:0',headless=headless, cfg=Cfg)
     env = HistoryWrapper(env)
 
     # load policy

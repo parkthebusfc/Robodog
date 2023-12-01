@@ -13,16 +13,22 @@ from go1_gym.envs.base.legged_robot_config import Cfg
 
 class World(Navigator):
     def __init__(self, sim_device, headless, num_envs=None, prone=False, deploy=False,
-                 cfg: Cfg = None, eval_cfg: Cfg = None, initial_dynamics_dict=None, physics_engine="SIM_PHYSX", locomtion_model_dir = "gait-conditioned-agility/pretrain-v0/train/025417.456545"):
+                 cfg: Cfg = None, eval_cfg: Cfg = None, initial_dynamics_dict=None, physics_engine="SIM_PHYSX", locomtion_model_dir = "../runs/gait-conditioned-agility/2023-11-03/train/210513.245978"):
         super().__init__(sim_device, headless, num_envs, prone,deploy,cfg,eval_cfg,initial_dynamics_dict,physics_engine, locomtion_model_dir=locomtion_model_dir)
 
         self.num_actions = 3
+        
 
     def update_goals(self, env_ids):
         self.init_root_states = self.root_states[self.num_actors_per_env * env_ids, :3]
         self.goals = self.root_states[self.num_actors_per_env * env_ids, :3]
         self.goals[:, 0:1] += 3 * torch.ones((len(env_ids), 1)).to(self.goals.device)
-        print("Computed Goals!")
+
+    def _init_buffers(self):
+        super()._init_buffers()
+        self.update_goals(torch.arange(self.num_envs, device=self.device))
+        self.prev_robot_velocities = torch.zeros((self.num_envs, 3), device=self.device, dtype=torch.float32)
+        self.curr_robot_velocities = torch.zeros((self.num_envs, 3), device=self.device, dtype=torch.float32)
 
     def _create_envs(self):
         """ Creates environments:
@@ -141,14 +147,14 @@ class World(Navigator):
             ## Adding walls
             offset = [
                 (1.5,1,1),
-                (3.5,0,1),
+                (4.0,0,1),
                 (1.5,-1,1),
-                (-0.5,0,1),
+                (-1.0,0,1),
             ]
             dimensions = [
-                (4,0.12,2.0),
+                (5,0.12,2.0),
                 (0.12,2.0,2.0),
-                (4.0,0.12,2.0),
+                (5.0,0.12,2.0),
                 (0.12,2.0,2.0),
             ]
             
@@ -204,15 +210,66 @@ class World(Navigator):
         self.video_frames_eval = []
         self.complete_video_frames = []
         self.complete_video_frames_eval = []
-    
-    def _reset_root_states(self, env_ids, cfg):
-        """ Resets ROOT states position and velocities of selected environmments
-            Sets base position based on the curriculum
-            Selects randomized base velocities within -0.5:0.5 [m/s, rad/s]
+
+    def _reset_dofs(self, env_ids, cfg):
+        """ Resets DOF position and velocities of selected environmments
+        Positions are randomly selected within 0.5:1.5 x default positions.
+        Velocities are set to zero.
+
         Args:
             env_ids (List[int]): Environemnt ids
         """
-        print("Num Actors: ",self.num_actors_per_env)
+        robot_index = env_ids*self.num_actors_per_env
+        self.dof_pos[env_ids] = self.default_dof_pos * torch_rand_float(0.5, 1.5, (len(env_ids), self.num_dof),
+                                                                        device=self.device)
+        self.dof_vel[env_ids] = 0.
+
+        env_ids_int32 = robot_index.to(dtype=torch.int32)
+        self.gym.set_dof_state_tensor_indexed(self.sim,
+                                              gymtorch.unwrap_tensor(self.dof_state),
+                                              gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
+
+    def reset_idx(self, env_ids):
+
+        if len(env_ids) == 0:
+            return
+
+        # reset robot states
+        self._resample_commands(env_ids)
+
+        self._call_train_eval(self._reset_dofs, env_ids)
+        self._call_train_eval(self._reset_root_states, env_ids)
+
+        # reset buffers
+        self.last_actions[env_ids] = 0.
+        self.last_last_actions[env_ids] = 0.
+        self.last_dof_vel[env_ids] = 0.
+        self.feet_air_time[env_ids] = 0.
+        self.episode_length_buf[env_ids] = 0
+        self.reset_buf[env_ids] = 1
+
+        train_env_ids = env_ids[env_ids < self.num_train_envs]
+        if len(train_env_ids) > 0:
+            self.extras["train/episode"] = {}
+            for key in self.episode_sums.keys():
+                self.extras["train/episode"]['rew_' + key] = torch.mean(
+                    self.episode_sums[key][train_env_ids])
+                self.episode_sums[key][train_env_ids] = 0.
+        eval_env_ids = env_ids[env_ids >= self.num_train_envs]
+        if len(eval_env_ids) > 0:
+            self.extras["eval/episode"] = {}
+            for key in self.episode_sums.keys():
+                # save the evaluation rollout result if not already saved
+                unset_eval_envs = eval_env_ids[self.episode_sums_eval[key][eval_env_ids] == -1]
+                self.episode_sums_eval[key][unset_eval_envs] = self.episode_sums[key][unset_eval_envs]
+                self.episode_sums[key][eval_env_ids] = 0.
+        self.extras["time_outs"] = self.time_out_buf[:self.num_train_envs]
+        self.gait_indices[env_ids] = 0
+
+        for i in range(len(self.lag_buffer)):
+            self.lag_buffer[i][env_ids, :] = 0
+
+    def _reset_root_states(self, env_ids, cfg):
         ### Transform of robot which is the first actor of each environment
         # base position 
         if self.custom_origins:
@@ -230,17 +287,22 @@ class World(Navigator):
             self.root_states[self.num_actors_per_env * env_ids] = self.base_init_state
             self.root_states[self.num_actors_per_env * env_ids, :3] += self.env_origins[env_ids]
         
-        self.update_goals(env_ids)
+        if self.viewer:
+            points = []
+            for g in self.goals:
+                points.extend((g + torch.Tensor([0,-1,0]).to(g.device)).tolist())
+                points.extend((g + torch.Tensor([0,1,0]).to(g.device)).tolist())
+            self.gym.add_lines(self.viewer,self.envs[0],self.num_envs,np.array(points,dtype=np.float32),np.array([[0,0,1.0] for _ in range(self.num_envs)]).reshape((-1)).astype(np.float32))
         # base yaws
-        init_yaws = torch_rand_float(-cfg.terrain.yaw_init_range,
-                                     cfg.terrain.yaw_init_range, (len(env_ids), 1),
-                                     device=self.device)
-        quat = quat_from_angle_axis(init_yaws, torch.Tensor([0, 0, 1]).to(self.device))[:, 0, :]
-        self.root_states[self.num_actors_per_env * env_ids, 3:7] = quat
+        # init_yaws = torch_rand_float(-cfg.terrain.yaw_init_range,
+        #                              cfg.terrain.yaw_init_range, (len(env_ids), 1),
+        #                              device=self.device)
+        # quat = quat_from_angle_axis(init_yaws, torch.Tensor([0, 0, 1]).to(self.device))[:, 0, :]
+        # self.root_states[self.num_actors_per_env * env_ids, 3:7] = quat
 
-        # base velocities
-        self.root_states[self.num_actors_per_env * env_ids, 7:13] = torch_rand_float(-0.5, 0.5, (len(env_ids), 6),
-                                                           device=self.device)  # [7:10]: lin vel, [10:13]: ang vel
+        # # base velocities
+        # self.root_states[self.num_actors_per_env * env_ids, 7:13] = torch_rand_float(-0.5, 0.5, (len(env_ids), 6),
+        #                                                    device=self.device)  # [7:10]: lin vel, [10:13]: ang vel
 
         env_ids_int32 = torch.arange(self.root_states.shape[0], dtype=torch.int32, device=env_ids.device)
 
@@ -250,10 +312,11 @@ class World(Navigator):
                                                      gymtorch.unwrap_tensor(env_ids_int32), len(env_ids_int32))
         if not status:
             raise SystemError("Could not set necessary transforms")
+
         if cfg.env.record_video:
-            bx, by, bz = self.root_states[0, 0], self.root_states[0, 1], self.root_states[0, 2]
-            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx, by - 4.0, bz + 3.0),
-                                         gymapi.Vec3(bx, by, bz))
+            bx, by, bz = self.env_origins[0]
+            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx + 4.0, by, bz + 4.0),
+                                         gymapi.Vec3(bx + 1.5, by, bz))
 
         if cfg.env.record_video and 0 in env_ids:
             if self.complete_video_frames is None:
@@ -271,13 +334,50 @@ class World(Navigator):
     
     def compute_reward(self):
         self.rew_buf[:] = 0
-        env_ids = torch.arange(self.num_envs)
-        self.rew_buf = (self.root_states[self.num_actors_per_env * env_ids,0:1] - self.goals[:,0:1])[:,0]
-        self.rew_buf -= 2 * torch.abs(self.init_root_states[:,1] - self.root_states[self.num_actors_per_env* env_ids, ])
-        self.rew_buf += -10 * self.time_out_buf
+        env_ids = torch.arange(self.num_envs)  
+        robot_pos = self.root_states[self.num_actors_per_env * env_ids,0:3]    
+        # reward structure (+ve main task) * exp(negative auxiliary rewards)
+        task_reward = 1/(0.2+ torch.abs((robot_pos[:,0] - self.goals[:,0])))
+        # time penalty
+        time_penalty = -0.02 * (torch.exp(0.005*self.episode_length_buf) -1 )
+        # avoid walls
+        wall_penalty = []
+        wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 1,1:2] - robot_pos[:,1:2],keepdim=True,dim=1))
+        wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 3,1:2] - robot_pos[:,1:2],keepdim=True,dim=1))
+        wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 2,0:1] - robot_pos[:,0:1],keepdim=True,dim=1))
+        wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 4,0:1] - robot_pos[:,0:1],keepdim=True,dim=1))
+        wall_penalty =  torch.min(torch.stack(wall_penalty, axis=1),axis=1)[0].squeeze(1)
+        wall_penalty = -0.05* 1/ (0.05+torch.abs(wall_penalty))
+
+        # Smoothness reward
+        smoothness_reward = 0.5 * 1/(1+torch.norm(self.curr_robot_velocities - self.prev_robot_velocities, dim=1))
+        self.rew_buf = task_reward + smoothness_reward + wall_penalty + time_penalty
+
+        self.episode_sums["goal_distance"] = torch.cat([self.episode_sums["goal_distance"],torch.norm(robot_pos[:,:1] - self.goals[:,:1],dim=1, keepdim=True)],dim=1)
+        self.episode_sums["timeouts"] += self.time_out_buf.to(torch.float32)
+        self.episode_sums["total_reward"] += self.rew_buf
+        self.episode_sums["successes"] += (robot_pos[:,0] >= self.goals[:,0]).to(torch.float)
 
     def check_termination(self):
         self.time_out_buf = self.episode_length_buf > self.cfg.env.max_episode_length
         self.reset_buf = self.time_out_buf
         env_ids = torch.arange(self.num_envs)
         self.reset_buf |= (self.root_states[self.num_actors_per_env * env_ids, 0] > self.goals[:, 0])
+
+    def _prepare_reward_function(self):
+        self.episode_sums = {
+            x : torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
+            for x in ["total_reward","timeouts","successes"]
+        }
+        for x in ["goal_distance"]:
+            self.episode_sums[x] = torch.empty((self.num_envs, 0),device=self.device, requires_grad=False)
+
+    def _parse_cfg(self, cfg):
+        self.dt = self.cfg.control.decimation * self.sim_params.dt
+        cfg.env.episode_length_s = 750 * self.dt
+        super()._parse_cfg(cfg)
+
+    def step(self, cmd):
+        self.prev_robot_velocities = torch.clone(self.curr_robot_velocities)
+        self.curr_robot_velocities = torch.clone(cmd)
+        return super().step(cmd)
