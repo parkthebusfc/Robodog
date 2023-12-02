@@ -21,8 +21,8 @@ os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 def train_nav(headless=True):
     # dirs = glob.glob(f"../runs/{label}/*")
     # logdir = sorted(dirs)[0]
-    label = "gait-conditioned-agility/pretrain-v0/train/025417.456545"
-    logdir = f"./runs/{label}"
+    label = "gait-conditioned-agility/2023-11-03/train/210513.245978"
+    logdir = f"../runs/{label}"
     print(logdir)
 
     with open(logdir + "/parameters.pkl", 'rb') as file:
