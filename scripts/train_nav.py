@@ -63,9 +63,9 @@ def train_nav(headless=True):
     Cfg.domain_rand.randomize_lag_timesteps = True
     Cfg.control.control_type = "actuator_net"
 
-    Cfg.commands.limit_vel_x = [-1.0,1.0]
-    Cfg.commands.limit_vel_y = [-1.0,1.0]
-    Cfg.commands.limit_vel_yaw = [-1.0,1.0]
+    Cfg.commands.limit_vel_x = [-0.5,0.5]
+    Cfg.commands.limit_vel_y = [-0.5,0.5]
+    Cfg.commands.limit_vel_yaw = [-0.5,0.5]
 
     from go1_gym.envs.wrappers.history_wrapper_nav import HistoryWrapper
 
