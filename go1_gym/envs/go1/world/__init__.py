@@ -119,8 +119,28 @@ class World(Navigator):
             body_props = self._process_rigid_body_props(body_props, env_num)
             self.gym.set_actor_rigid_body_properties(env_handle, wall_handle, body_props, recomputeInertia=True)
             return wall_handle
+
+        def make_obstacle(env_handle, start_pose, dimensions, env_num):
+            cube_asset_options = gymapi.AssetOptions()
+            cube_asset_options.use_mesh_materials = True
+            cube_asset_options.disable_gravity = True
+            cube_asset_options.fix_base_link = True
+            cube_asset = self.gym.create_box(self.sim, *dimensions, cube_asset_options)
+            cube_rigid_shape_props = self.gym.get_asset_rigid_shape_properties(self.robot_asset)
+            cube_dof_props = self.gym.get_asset_dof_properties(self.robot_asset)
+            rigid_shape_props = self._process_rigid_shape_props(cube_rigid_shape_props, env_num)
+            self.gym.set_asset_rigid_shape_properties(cube_asset, rigid_shape_props)
+            cube_handle = self.gym.create_actor(env_handle, cube_asset, start_pose , "obstacle", env_num,
+                                                  self.cfg.asset.self_collisions, 0)
+            dof_props = self._process_dof_props(cube_dof_props, env_num)
+            self.gym.set_actor_dof_properties(env_handle, cube_handle, dof_props)
+            body_props = self.gym.get_actor_rigid_body_properties(env_handle, cube_handle)
+            body_props = self._process_rigid_body_props(body_props, env_num)
+            self.gym.set_actor_rigid_body_properties(env_handle, cube_handle, body_props, recomputeInertia=True)
+            return cube_handle
         
         self.wall_handles = []
+        self.cube_handles = []
 
         for i in range(self.num_envs):
             # create env instance
@@ -168,8 +188,25 @@ class World(Navigator):
                 wall_handle = make_wall(env_handle, tmp_pose, dim, i,j) 
                 self.wall_handles.append(wall_handle)
 
+            cube_offset = [0.8,0.0,1.0]
+            cube_dim = [0.4,0.3,2.0]
+            #randomize offset based on y-dimension
+            y_offset = (1 - 0.06) - (cube_dim[1]/2)
+            #y_offset_max = (pos[1] - 1 + 0.06) - (cube_dim[1]/2)
+            cube_offset[1] += torch_rand_float(-y_offset, y_offset, (1, 1), device=self.device).squeeze(1).cpu().item()
+            cube_offset[0] += torch_rand_float(0, 1.7, (1, 1), device=self.device).squeeze(1).cpu().item()
+            cube_pose = gymapi.Transform()
+            
+            
+            cofs = gymapi.Vec3(round(cube_offset[0], 2), round(cube_offset[1], 2), round(cube_offset[2], 2))
+            cube_pose.p = start_pose.p + cofs
+            cube_handle = make_obstacle(env_handle, cube_pose, cube_dim, i)
+            self.cube_handles.append(cube_handle)
+
+            
 
             self.envs.append(env_handle)
+            self.envs.append(cube_handle)
             self.actor_handles.append(anymal_handle)
         
         self.num_actors_per_env = (len(self.actor_handles) + len(self.wall_handles)) // self.num_envs
