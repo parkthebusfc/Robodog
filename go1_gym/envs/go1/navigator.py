@@ -107,7 +107,7 @@ class Navigator(VelocityTrackingEasyEnv):
         locomotion_actions = self.locomotion_policy(obs)
         obs, _, rew, done, info = self.velocity_step(locomotion_actions)
         # update obs
-       # obs_reqd = torch.cat((self.base_pos, self.base_lin_vel, self.base_quat), dim=-1) 
+        # obs_reqd = torch.cat((self.base_pos, self.base_lin_vel, self.base_quat), dim=-1) 
 
         self.obs_history = torch.cat((self.obs_history[:, self.num_obs:], obs), dim=-1)
         nav_obs_reqd = torch.cat((self.base_pos, self.base_lin_vel, self.base_quat), dim=-1)

@@ -21,7 +21,7 @@ def load_policy_nav(logdir):
 
     def policy_nav(obs, info={}):
         i = 0
-        action = body.forward(obs["nav_obs_history"].to('cuda:0'))
+        action = body.forward(obs["nav_obs_history"].to('cpu'))
         return action
 
     return policy_nav
@@ -33,8 +33,8 @@ def load_policy(logdir):
 
     def policy(obs, info={}):
         i = 0
-        latent = adaptation_module.forward(obs["obs_history"].to('cuda:0'))
-        action = body.forward(torch.cat((obs["obs_history"].to('cuda:0'), latent), dim=-1))
+        latent = adaptation_module.forward(obs["obs_history"].to('cpu'))
+        action = body.forward(torch.cat((obs["obs_history"].to('cpu'), latent), dim=-1))
         info['latent'] = latent
         return action
 
@@ -138,6 +138,7 @@ def dog_walk(env,policy, policy_nav, obs, num_eval_steps = 750):
     i = 0
     done = False
     while not done and i < num_eval_steps:
+        print('obs: ', obs)
         with torch.no_grad():
             actions = policy(obs)
             actions_nav = policy_nav(obs)
@@ -170,9 +171,9 @@ def play_go1(headless=False):
     import glob
     import os
 
-    label_nav = "/common/home/ak2227/Documents/CS562/isaacgym/python/walk-these-ways/scripts/ak2227/scratch/2023/11-27/165508"
+    label_nav = "/common/home/ak2227/Documents/CS562/isaacgym/python/walk-these-ways/scripts/ak2227/scratch/2023/11-27/234652"
 
-    label = "/common/home/ak2227/Documents/CS562/isaacgym/python/walk-these-ways/runs/gait-conditioned-agility/2023-11-03/train/210513.245978"
+    label = "/common/home/ak2227/Documents/CS562/isaacgym/python/walk-these-ways/runs/gait-conditioned-agility/pretrain-v0/train/025417.456545"
 
     env, policy, policy_nav = load_env(label, label_nav, headless=headless)
     env.record_video = True
