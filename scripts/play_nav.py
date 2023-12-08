@@ -58,12 +58,9 @@ def saveToVideo(frames, output_video_name, frame_rate=25.0, codec='mp4v'):
     # Release the VideoWriter
     out.release()
 
-def load_env(label, label_nav, headless=False):
-    # dirs = glob.glob(f"../runs/{label}/*")
-    # logdir = sorted(dirs)[0]
-    # logdir = f"{label}"
+def load_env(label_nav, label_locomotion, headless=False):
 
-    with open(label + "/parameters.pkl", 'rb') as file:
+    with open(label_nav + "/parameters.pkl", 'rb') as file:
         pkl_cfg = pkl.load(file)
         print(pkl_cfg.keys())
         cfg = pkl_cfg["Cfg"]
@@ -106,7 +103,7 @@ def load_env(label, label_nav, headless=False):
     from go1_gym.envs.wrappers.history_wrapper_nav import HistoryWrapper
 
     #env = VelocityTrackingEasyEnv(sim_device='cuda:0', headless=headless, cfg=Cfg)
-    env = World(sim_device='cuda:0',headless=headless, cfg=Cfg)
+    env = World(sim_device='cuda:0',headless=headless, cfg=Cfg, locomtion_model_dir=label_locomotion)
     env = HistoryWrapper(env)
 
     # load policy
@@ -114,49 +111,19 @@ def load_env(label, label_nav, headless=False):
     from go1_gym_learn.ppo_nav.actor_critic_nav import ActorCritic_Nav
 
     policy_nav = load_policy_nav(label_nav)
-    policy = load_policy(label)
-    return env, policy, policy_nav
+    return env, policy_nav
 
 def dog_walk(env,policy, policy_nav, obs, num_eval_steps = 750):
     # num_eval_steps = 250
-    gaits = {"pronking": [0, 0, 0],
-             "trotting": [0.5, 0, 0],
-             "bounding": [0, 0.5, 0],
-             "pacing": [0, 0, -0.5]}
-    
-    
-
-    body_height_cmd = 0.0
-    step_frequency_cmd = 3.0
-    gait = torch.tensor(gaits["trotting"])
-    footswing_height_cmd = 0.08
-    pitch_cmd = 0.0
-    roll_cmd = 0.0
-    stance_width_cmd = 0.25
 
     measured_vels = np.zeros((num_eval_steps,3))
     i = 0
     done = False
     while not done and i < num_eval_steps:
         with torch.no_grad():
-            actions = policy(obs)
             actions_nav = policy_nav(obs)
-        #getting the automated velocities from the policy
         
-        x_vel_cmd, y_vel_cmd, yaw_vel_cmd = actions_nav[0]
-        
-        # env.commands[:, 0] = x_vel_cmd
-        # env.commands[:, 1] = y_vel_cmd
-        # env.commands[:, 2] = yaw_vel_cmd
-        # env.commands[:, 3] = body_height_cmd
-        # env.commands[:, 4] = step_frequency_cmd
-        # env.commands[:, 5:8] = gait
-        # env.commands[:, 8] = 0.5
-        # env.commands[:, 9] = footswing_height_cmd
-        # env.commands[:, 10] = pitch_cmd
-        # env.commands[:, 11] = roll_cmd
-        # env.commands[:, 12] = stance_width_cmd
-        obs, rew, done, info = env.step(actions_nav[0])
+        obs, rew, done, info = env.step(actions_nav)
         measured_vels[i,:] = env.base_lin_vel[0, :].cpu()
         measured_vels[i,2] = env.base_ang_vel[0, 2].cpu()
         i+=1
@@ -170,16 +137,17 @@ def play_go1(headless=False):
     import glob
     import os
 
-    label_nav = "/common/home/ak2227/Documents/CS562/isaacgym/python/walk-these-ways/scripts/ak2227/scratch/2023/11-27/165508"
+    curr_file_path = os.path.dirname(__file__)
+    label_nav = os.path.join(curr_file_path,"../aaj116/scratch/2023/12-03/144047")
 
-    label = "/common/home/ak2227/Documents/CS562/isaacgym/python/walk-these-ways/runs/gait-conditioned-agility/2023-11-03/train/210513.245978"
+    label_locomotion = os.path.join(curr_file_path,"../runs/gait-conditioned-agility/2023-11-14/train/165602.088670")
 
-    env, policy, policy_nav = load_env(label, label_nav, headless=headless)
+    env, policy_nav = load_env(label_nav, label_locomotion, headless=headless)
     env.record_video = True
     env.start_recording()
 
     obs = env.reset()
-    obs_vel = dog_walk(env,policy, policy_nav, obs)
+    obs_vel = dog_walk(env, policy_nav, obs)
     frames = env.video_frames
     env.pause_recording()
     print(len(frames))

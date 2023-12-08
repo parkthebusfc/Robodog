@@ -35,6 +35,7 @@ class Cfg(PrefixProto, cli=False):
         num_recording_envs = 1
         debug_viz = False
         all_agents_share = False
+        add_box = False
 
         priv_observe_friction = True
         priv_observe_friction_indep = True
