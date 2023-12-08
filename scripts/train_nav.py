@@ -21,11 +21,12 @@ os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 def train_nav(headless=True):
     # dirs = glob.glob(f"../runs/{label}/*")
     # logdir = sorted(dirs)[0]
-    label = "gait-conditioned-agility/2023-11-03/train/210513.245978"
-    logdir = f"../runs/{label}"
-    print(logdir)
+    curr_file_path = os.path.dirname(os.path.abspath(__file__))
+    label_locomotion = os.path.join(curr_file_path,"../runs/gait-conditioned-agility/pretrain-v0/train/025417.456545")
+    
+    print(label_locomotion)
 
-    with open(logdir + "/parameters.pkl", 'rb') as file:
+    with open(label_locomotion + "/parameters.pkl", 'rb') as file:
         pkl_cfg = pkl.load(file)
         print(pkl_cfg.keys())
         cfg = pkl_cfg["Cfg"]
@@ -52,7 +53,7 @@ def train_nav(headless=True):
     Cfg.domain_rand.randomize_com_displacement = False
 
     Cfg.env.num_recording_envs = 1
-    Cfg.env.num_envs = 128
+    Cfg.env.num_envs = 2
     Cfg.terrain.border_size = 0
     Cfg.terrain.center_robots = True
     Cfg.terrain.center_span = 1
@@ -75,12 +76,19 @@ def train_nav(headless=True):
     #training
     gpu_id = 0  
     #env = VelocityTrackingEasyEnv(sim_device='cuda:0', headless=headless, cfg=Cfg)
-    env = World(sim_device=f'cuda:{gpu_id}',headless=headless, cfg=Cfg, locomtion_model_dir= logdir)
-
+    env = World(sim_device=f'cuda:{gpu_id}',headless=headless, cfg=Cfg, locomtion_model_dir= label_locomotion)
     runner = Runner(env, device=f"cuda:{gpu_id}")
+    logger.log_params(Cfg=vars(Cfg))
     runner.learn(num_learning_iterations=30000, init_at_random_ep_len=True, eval_freq=100)
 
 
 if __name__ == '__main__':
     # to see the environment rendering, set headless=False
+    from pathlib import Path
+    from ml_logger import logger
+    from go1_gym import MINI_GYM_ROOT_DIR
+
+    stem = Path(__file__).stem
+    logger.configure(logger.utcnow(f'object-avoidance-navigation/%Y-%m-%d/{stem}/%H%M%S.%f'),
+                     root=Path(f"{MINI_GYM_ROOT_DIR}/runs").resolve(), )
     train_nav(headless=True)

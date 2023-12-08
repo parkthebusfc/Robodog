@@ -8,6 +8,7 @@ from go1_gym.utils.terrain import Terrain
 import os
 from isaacgym.torch_utils import *
 import math
+import pandas as pd
 
 from go1_gym.envs.base.legged_robot_config import Cfg
 
@@ -40,6 +41,7 @@ class World(Navigator):
         self.net_contact_forces = torch.tensor(self.net_contact_forces)
 
         self.contact_forces = self.net_contact_forces.view(self.num_envs, -1, 3)
+        self.stats = pd.DataFrame([[0,0]],columns=["success", "episodes"])
         
 
     def _create_envs(self):
@@ -304,9 +306,13 @@ class World(Navigator):
         if len(train_env_ids) > 0:
             self.extras["train/episode"] = {}
             for key in self.episode_sums.keys():
-                self.extras["train/episode"]['rew_' + key] = torch.mean(
+                if not key in ["successes"]:
+                    self.extras["train/episode"]['rew_' + key] = torch.mean(
                     self.episode_sums[key][train_env_ids])
-                self.episode_sums[key][train_env_ids] = 0.
+                    self.episode_sums[key][train_env_ids] = 0.
+                else:
+                    self.extras["train/episode"]["success_rate"] = torch.sum(self.episode_sums[key][train_env_ids]) * 750 / self.num_train_envs
+                    self.episode_sums[key][train_env_ids] = 0
         eval_env_ids = env_ids[env_ids >= self.num_train_envs]
         if len(eval_env_ids) > 0:
             self.extras["eval/episode"] = {}
@@ -390,24 +396,30 @@ class World(Navigator):
         robot_pos = self.root_states[self.num_actors_per_env * env_ids,0:3]    
         # # reward structure (+ve main task) * exp(negative auxiliary rewards)
         task_reward = 1/(0.2+ torch.abs((robot_pos[:,0] - self.goals[:,0])))
+        time_penalty = -0.02 * (torch.exp(0.005*self.episode_length_buf) -1 )
         # # avoid walls
         wall_penalty = -5.0 * torch.sum(1. * (torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1),
                          dim=1).to(self.device)
         # # Smoothness reward
         smoothness_reward = 0.5 * 1/(1+torch.norm(self.curr_robot_velocities - self.prev_robot_velocities, dim=1))
-        self.rew_buf = task_reward + smoothness_reward + wall_penalty
+        self.rew_buf = task_reward + smoothness_reward + wall_penalty + time_penalty
 
         self.episode_sums["goal_distance"] = torch.cat([self.episode_sums["goal_distance"],torch.norm(robot_pos[:,:1] - self.goals[:,:1],dim=1, keepdim=True)],dim=1)
         self.episode_sums["timeouts"] += self.time_out_buf.to(torch.float32)
         self.episode_sums["total_reward"] += self.rew_buf
         self.episode_sums["successes"] += (robot_pos[:,0] >= self.goals[:,0]).to(torch.float)
 
+        last_stat = self.stats.iloc[-1]
+        success_buff = (robot_pos[:,0] >= self.goals[:,0]).to(torch.float)
+        last_stat["success"] += torch.sum(success_buff).numpy()
+        last_stat["episodes"] += torch.sum(success_buff).numpy() + torch.sum(self.time_out_buf.to(torch.float32)).numpy()
+        self.stats.loc[len(self.stats)] = last_stat
+
     def check_termination(self):
         self.time_out_buf = self.episode_length_buf > self.cfg.env.max_episode_length
         self.reset_buf = self.time_out_buf
         env_ids = torch.arange(self.num_envs)
         self.reset_buf |= (self.root_states[self.num_actors_per_env * env_ids, 0] > self.goals[:, 0])
-        return
 
     def _prepare_reward_function(self):
         self.episode_sums = {

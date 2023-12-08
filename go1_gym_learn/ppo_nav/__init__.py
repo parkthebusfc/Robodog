@@ -175,7 +175,11 @@ class Runner:
             self.tot_timesteps += self.num_steps_per_env * self.env.num_envs
             if logger.every(RunnerArgs.log_freq, "iteration", start_on=1):
                 # if it % Config.log_freq == 0:
-                logger.log_metrics_summary(key_values={"timesteps": self.tot_timesteps, "iterations": it})
+                last_stat = self.env.stats.iloc[-1]
+                num_successes = last_stat["success"]
+                num_episodes = last_stat["episodes"]
+                success_rate = 0.0 if num_episodes == 0 else num_successes / num_episodes
+                logger.log_metrics_summary(key_values={"timesteps": self.tot_timesteps, "iterations": it, "success_rate" : success_rate })
                 logger.job_running()
 
             if it % RunnerArgs.save_interval == 0:
