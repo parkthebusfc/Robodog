@@ -14,8 +14,8 @@ from go1_gym.envs.base.legged_robot_config import Cfg
 class World(Navigator):
     def __init__(self, sim_device, headless, num_envs=None, prone=False, deploy=False,
                  cfg: Cfg = None, eval_cfg: Cfg = None, initial_dynamics_dict=None, physics_engine="SIM_PHYSX", locomtion_model_dir = "../runs/gait-conditioned-agility/2023-11-03/train/210513.245978"):
-        super().__init__(sim_device, headless, num_envs, prone,deploy,cfg,eval_cfg,initial_dynamics_dict,physics_engine, locomtion_model_dir=locomtion_model_dir)
         self.add_box = cfg.env.add_box
+        super().__init__(sim_device, headless, num_envs, prone,deploy,cfg,eval_cfg,initial_dynamics_dict,physics_engine, locomtion_model_dir=locomtion_model_dir)
         self.num_actions = 3
         
 
@@ -400,6 +400,7 @@ class World(Navigator):
         self.reset_buf = self.time_out_buf
         env_ids = torch.arange(self.num_envs)
         self.reset_buf |= (self.root_states[self.num_actors_per_env * env_ids, 0] > self.goals[:, 0])
+        return
 
     def _prepare_reward_function(self):
         self.episode_sums = {

@@ -15,8 +15,8 @@ from matplotlib import pyplot as plt
 from tqdm import tqdm
 import os
 
-def load_policy_nav(logdir):
-    body = torch.jit.load(logdir + '/checkpoints/body_latest.jit')
+def load_policy_nav(logdir, device="cpu"):
+    body = torch.jit.load(logdir + '/checkpoints/body_latest.jit', map_location=device)
     import os
 
     def policy_nav(obs, info={}):
@@ -25,21 +25,6 @@ def load_policy_nav(logdir):
         return action
 
     return policy_nav
-
-def load_policy(logdir):
-    body = torch.jit.load(logdir + '/checkpoints/body_latest.jit')
-    import os
-    adaptation_module = torch.jit.load('/common/home/ak2227/Documents/CS562/isaacgym/python/walk-these-ways/runs/gait-conditioned-agility/2023-11-03/train/210513.245978/checkpoints/adaptation_module_latest.jit')
-
-    def policy(obs, info={}):
-        i = 0
-        latent = adaptation_module.forward(obs["obs_history"].to('cuda:0'))
-        action = body.forward(torch.cat((obs["obs_history"].to('cuda:0'), latent), dim=-1))
-        info['latent'] = latent
-        return action
-
-    return policy
-
 
 def saveToVideo(frames, output_video_name, frame_rate=25.0, codec='mp4v'):
     # Get the shape of the first frame to determine video dimensions
@@ -60,7 +45,7 @@ def saveToVideo(frames, output_video_name, frame_rate=25.0, codec='mp4v'):
 
 def load_env(label_nav, label_locomotion, headless=False):
 
-    with open(label_nav + "/parameters.pkl", 'rb') as file:
+    with open(label_locomotion + "/parameters.pkl", 'rb') as file:
         pkl_cfg = pkl.load(file)
         print(pkl_cfg.keys())
         cfg = pkl_cfg["Cfg"]
@@ -102,18 +87,18 @@ def load_env(label_nav, label_locomotion, headless=False):
 
     from go1_gym.envs.wrappers.history_wrapper_nav import HistoryWrapper
 
-    #env = VelocityTrackingEasyEnv(sim_device='cuda:0', headless=headless, cfg=Cfg)
-    env = World(sim_device='cuda:0',headless=headless, cfg=Cfg, locomtion_model_dir=label_locomotion)
-    env = HistoryWrapper(env)
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+    env = World(sim_device=device,headless=headless, cfg=Cfg, locomtion_model_dir=label_locomotion)
 
     # load policy
     from ml_logger import logger
     from go1_gym_learn.ppo_nav.actor_critic_nav import ActorCritic_Nav
 
-    policy_nav = load_policy_nav(label_nav)
+    policy_nav = load_policy_nav(label_nav, device)
     return env, policy_nav
 
-def dog_walk(env,policy, policy_nav, obs, num_eval_steps = 750):
+def dog_walk(env, policy_nav, obs, num_eval_steps = 750):
     # num_eval_steps = 250
 
     measured_vels = np.zeros((num_eval_steps,3))
@@ -137,45 +122,36 @@ def play_go1(headless=False):
     import glob
     import os
 
-    curr_file_path = os.path.dirname(__file__)
-    label_nav = os.path.join(curr_file_path,"../aaj116/scratch/2023/12-03/144047")
+    curr_file_path = os.path.dirname(os.path.abspath(__file__))
+    label_nav = os.path.join(curr_file_path,"aaj116/2023/11-27/155016")
 
-    label_locomotion = os.path.join(curr_file_path,"../runs/gait-conditioned-agility/2023-11-14/train/165602.088670")
-
+    label_locomotion = os.path.join(curr_file_path,"../runs/gait-conditioned-agility/pretrain-v0/train/025417.456545")
+    
     env, policy_nav = load_env(label_nav, label_locomotion, headless=headless)
-    env.record_video = True
+
     env.start_recording()
 
     obs = env.reset()
-    obs_vel = dog_walk(env, policy_nav, obs)
-    frames = env.video_frames
-    env.pause_recording()
-    print(len(frames))
-    record_frames(frames)
-    print(f'measured velocity:{obs_vel}')
 
-def record_frames(frames):
-    for i,x in enumerate(frames):
-        plt.imsave("./videos/frame-"+str(i)+".jpg",x)
+    dog_walk(env, policy_nav, obs)
     
-    images = [img for img in os.listdir("./videos") if img.endswith(".jpg")]
-    
-    def getNum(name):
-        num = name.split('-')[1].split('.')[0]
-        return int(num)
-    
-    images.sort(key=getNum)
-    
-    height, width, _ = frames[0].shape
-    video = cv2.VideoWriter("video2.avi",0, 10, (width, height))
-    
-    for image in images:
-        video.write(cv2.imread(os.path.join("./videos", image)))
+    write_video(env.complete_video_frames, "./video.avi")
 
-    cv2.destroyAllWindows()
-    video.release()    
 
+def write_video(images, video_path, fps=30):
+  images = np.array(images)
+  height, width, channels = images.shape[1:4]
+
+  fourcc = cv2.VideoWriter_fourcc(*'DIVX')
+
+  writer = cv2.VideoWriter(video_path, fourcc, fps, (width, height))
+
+  for image in images:
+    writer.write(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+
+  writer.release()
+  cv2.destroyAllWindows()
 
 if __name__ == '__main__':
     # to see the environment rendering, set headless=False
-    play_go1(headless=False)
+    play_go1(headless=True)
