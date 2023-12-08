@@ -14,8 +14,8 @@ from go1_gym.envs.base.legged_robot_config import Cfg
 class World(Navigator):
     def __init__(self, sim_device, headless, num_envs=None, prone=False, deploy=False,
                  cfg: Cfg = None, eval_cfg: Cfg = None, initial_dynamics_dict=None, physics_engine="SIM_PHYSX", locomtion_model_dir = "../runs/gait-conditioned-agility/2023-11-03/train/210513.245978"):
+        self.add_box = cfg.env.add_box
         super().__init__(sim_device, headless, num_envs, prone,deploy,cfg,eval_cfg,initial_dynamics_dict,physics_engine, locomtion_model_dir=locomtion_model_dir)
-
         self.num_actions = 3
         
 
@@ -187,26 +187,26 @@ class World(Navigator):
 
                 wall_handle = make_wall(env_handle, tmp_pose, dim, i,j) 
                 self.wall_handles.append(wall_handle)
-
-            cube_offset = [0.8,0.0,1.0]
-            cube_dim = [0.4,0.3,2.0]
-            #randomize offset based on y-dimension
-            y_offset = (1 - 0.06) - (cube_dim[1]/2)
-            #y_offset_max = (pos[1] - 1 + 0.06) - (cube_dim[1]/2)
-            cube_offset[1] += torch_rand_float(-y_offset, y_offset, (1, 1), device=self.device).squeeze(1).cpu().item()
-            cube_offset[0] += torch_rand_float(0, 1.7, (1, 1), device=self.device).squeeze(1).cpu().item()
-            cube_pose = gymapi.Transform()
             
-            
-            cofs = gymapi.Vec3(round(cube_offset[0], 2), round(cube_offset[1], 2), round(cube_offset[2], 2))
-            cube_pose.p = start_pose.p + cofs
-            cube_handle = make_obstacle(env_handle, cube_pose, cube_dim, i)
-            self.cube_handles.append(cube_handle)
+            if self.add_box:
+                cube_offset = [0.8,0.0,1.0]
+                cube_dim = [0.4,0.3,2.0]
+                #randomize offset based on y-dimension
+                y_offset = (1 - 0.06) - (cube_dim[1]/2)
+                #y_offset_max = (pos[1] - 1 + 0.06) - (cube_dim[1]/2)
+                cube_offset[1] += torch_rand_float(-y_offset, y_offset, (1, 1), device=self.device).squeeze(1).cpu().item()
+                cube_offset[0] += torch_rand_float(0, 1.7, (1, 1), device=self.device).squeeze(1).cpu().item()
+                cube_pose = gymapi.Transform()
+                
+                
+                cofs = gymapi.Vec3(round(cube_offset[0], 2), round(cube_offset[1], 2), round(cube_offset[2], 2))
+                cube_pose.p = start_pose.p + cofs
+                cube_handle = make_obstacle(env_handle, cube_pose, cube_dim, i)
+                self.wall_handles.append(cube_handle)
 
             
 
             self.envs.append(env_handle)
-            self.envs.append(cube_handle)
             self.actor_handles.append(anymal_handle)
         
         self.num_actors_per_env = (len(self.actor_handles) + len(self.wall_handles)) // self.num_envs
@@ -400,6 +400,7 @@ class World(Navigator):
         self.reset_buf = self.time_out_buf
         env_ids = torch.arange(self.num_envs)
         self.reset_buf |= (self.root_states[self.num_actors_per_env * env_ids, 0] > self.goals[:, 0])
+        return
 
     def _prepare_reward_function(self):
         self.episode_sums = {

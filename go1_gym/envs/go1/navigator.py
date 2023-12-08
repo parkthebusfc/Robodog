@@ -78,7 +78,7 @@ class Navigator(VelocityTrackingEasyEnv):
     def get_observations(self):
         obs = self.get_observation_buffer()
         self.obs_history = torch.cat((self.obs_history[:, self.num_obs:], obs), dim=-1)
-        nav_obs_reqd = torch.cat((self.base_pos, self.base_lin_vel, self.base_quat), dim=-1)
+        nav_obs_reqd = torch.cat((self.base_pos, self.base_lin_vel, self.base_quat), dim=-1).to(self.device)
         self.nav_obs_history = torch.cat((self.nav_obs_history[:,self.nav_obs_len:], nav_obs_reqd),dim=-1)
 
         return {'obs': obs, 'obs_history': self.obs_history, 'obs_nav': nav_obs_reqd , 'nav_obs_history': self.nav_obs_history}
@@ -124,5 +124,4 @@ class Navigator(VelocityTrackingEasyEnv):
         #self.reset_idx(torch.arange(self.num_envs, device=self.device))
         self.reset_idx(torch.arange(self.num_envs, device=self.device))
         self.step(torch.zeros(self.num_envs, self.num_actions, device=self.device, requires_grad=False))
-        obs_reqd = torch.cat((self.base_pos, self.base_lin_vel, self.base_quat), dim=-1) 
-        return obs_reqd
+        return self.get_observations()
