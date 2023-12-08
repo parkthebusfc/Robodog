@@ -118,8 +118,8 @@ class Runner:
         num_train_envs = self.env.num_train_envs
 
         obs_dict = self.env.get_observations()  # TODO: check, is this correct on the first step?
-        obs,  obs_history, obs_nav , nav_obs_history = obs_dict["obs"], obs_dict["obs_history"], obs_dict["obs_nav"] , obs_dict["nav_obs_history"]
-        obs,  obs_history, obs_nav , nav_obs_history = obs.to(self.device), obs_history.to(self.device), obs_nav.to(self.device) , nav_obs_history.to(self.device)
+        obs,  obs_history, obs_nav , nav_obs_history, box_info = obs_dict["obs"], obs_dict["obs_history"], obs_dict["obs_nav"] , obs_dict["nav_obs_history"], obs_dict["box_info"]
+        obs,  obs_history, obs_nav , nav_obs_history, box_info = obs.to(self.device), obs_history.to(self.device), obs_nav.to(self.device) , nav_obs_history.to(self.device), box_info.to(self.device)
         self.alg.actor_critic.train()  # switch to train mode (for dropout for example)
 
         tot_iter = self.current_learning_iteration + num_learning_iterations
@@ -129,13 +129,11 @@ class Runner:
             with torch.inference_mode():
                 for i in range(self.num_steps_per_env):
                     actions_train = self.alg.act(obs_nav[:num_train_envs], 
-                                                 nav_obs_history[:num_train_envs])
+                                                 torch.cat((nav_obs_history[:num_train_envs],box_info[:num_train_envs]),dim=-1))
                     ret = self.env.step(actions_train)
                     obs_dict, rewards, dones, infos = ret
-                    obs,  obs_history , obs_nav , nav_obs_history = obs_dict["obs"], obs_dict[
-                        "obs_history"], obs_dict["obs_nav"] , obs_dict["nav_obs_history"]
-
-                    obs,  obs_history, obs_nav,nav_obs_history, rewards, dones = obs.to(self.device),  obs_history.to(self.device), obs_nav.to(self.device),nav_obs_history.to(self.device), rewards.to(self.device), dones.to(self.device)
+                    obs,  obs_history, obs_nav , nav_obs_history, box_info = obs_dict["obs"], obs_dict["obs_history"], obs_dict["obs_nav"] , obs_dict["nav_obs_history"], obs_dict["box_info"]
+                    obs,  obs_history, obs_nav , nav_obs_history, box_info = obs.to(self.device), obs_history.to(self.device), obs_nav.to(self.device) , nav_obs_history.to(self.device), box_info.to(self.device)
                     self.alg.process_env_step(rewards[:num_train_envs], dones[:num_train_envs], infos)
 
                     if 'train/episode' in infos:

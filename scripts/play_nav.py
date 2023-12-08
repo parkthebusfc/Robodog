@@ -80,6 +80,7 @@ def load_env(label_nav, label_locomotion, headless=False):
     Cfg.terrain.center_span = 1
     Cfg.terrain.teleport_robots = True
     Cfg.env.record_video = True
+    Cfg.env.add_box = True
 
     Cfg.domain_rand.lag_timesteps = 6
     Cfg.domain_rand.randomize_lag_timesteps = True
@@ -154,4 +155,4 @@ def write_video(images, video_path, fps=30):
 
 if __name__ == '__main__':
     # to see the environment rendering, set headless=False
-    play_go1(headless=True)
+    play_go1(headless=False)

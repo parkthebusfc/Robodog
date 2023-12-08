@@ -67,6 +67,9 @@ def train_nav(headless=True):
     Cfg.commands.limit_vel_y = [-0.5,0.5]
     Cfg.commands.limit_vel_yaw = [-0.5,0.5]
 
+    Cfg.asset.penalize_contacts_on = ["thigh","calf","hip","base"]
+    Cfg.env.add_box = True
+
     from go1_gym.envs.wrappers.history_wrapper_nav import HistoryWrapper
 
     #training

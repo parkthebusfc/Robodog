@@ -30,6 +30,18 @@ class World(Navigator):
         self.prev_robot_velocities = torch.zeros((self.num_envs, 3), device=self.device, dtype=torch.float32)
         self.curr_robot_velocities = torch.zeros((self.num_envs, 3), device=self.device, dtype=torch.float32)
 
+        net_contact_forces = gymtorch.wrap_tensor(self.gym.acquire_net_contact_force_tensor(self.sim))
+        
+        env_ids = np.arange(self.num_envs) * (net_contact_forces.shape[0])
+
+        self.net_contact_forces = []
+        for start_point in env_ids:
+            self.net_contact_forces.extend(net_contact_forces[start_point:start_point + self.num_bodies].tolist())
+        self.net_contact_forces = torch.tensor(self.net_contact_forces)
+
+        self.contact_forces = self.net_contact_forces.view(self.num_envs, -1, 3)
+        
+
     def _create_envs(self):
         """ Creates environments:
              1. loads the robot URDF/MJCF asset,
@@ -141,6 +153,7 @@ class World(Navigator):
         
         self.wall_handles = []
         self.cube_handles = []
+        self.box_info = []
 
         for i in range(self.num_envs):
             # create env instance
@@ -190,7 +203,7 @@ class World(Navigator):
             
             if self.add_box:
                 cube_offset = [0.8,0.0,1.0]
-                cube_dim = [0.4,0.3,2.0]
+                cube_dim = [0.4,torch_rand_float(0.3,1.5,(1,1), device=self.device).cpu().numpy()[0][0],2.0]
                 #randomize offset based on y-dimension
                 y_offset = (1 - 0.06) - (cube_dim[1]/2)
                 #y_offset_max = (pos[1] - 1 + 0.06) - (cube_dim[1]/2)
@@ -201,6 +214,7 @@ class World(Navigator):
                 
                 cofs = gymapi.Vec3(round(cube_offset[0], 2), round(cube_offset[1], 2), round(cube_offset[2], 2))
                 cube_pose.p = start_pose.p + cofs
+                self.box_info.append([cube_pose.p.x,cube_pose.p.y,cube_dim[1]])
                 cube_handle = make_obstacle(env_handle, cube_pose, cube_dim, i)
                 self.wall_handles.append(cube_handle)
 
@@ -209,6 +223,7 @@ class World(Navigator):
             self.envs.append(env_handle)
             self.actor_handles.append(anymal_handle)
         
+        self.box_info = torch.Tensor(self.box_info).to(self.device)
         self.num_actors_per_env = (len(self.actor_handles) + len(self.wall_handles)) // self.num_envs
         self.feet_indices = torch.zeros(len(feet_names), dtype=torch.long, device=self.device, requires_grad=False)
         for i in range(len(feet_names)):
@@ -373,22 +388,14 @@ class World(Navigator):
         self.rew_buf[:] = 0
         env_ids = torch.arange(self.num_envs)  
         robot_pos = self.root_states[self.num_actors_per_env * env_ids,0:3]    
-        # reward structure (+ve main task) * exp(negative auxiliary rewards)
+        # # reward structure (+ve main task) * exp(negative auxiliary rewards)
         task_reward = 1/(0.2+ torch.abs((robot_pos[:,0] - self.goals[:,0])))
-        # time penalty
-        time_penalty = -0.02 * (torch.exp(0.005*self.episode_length_buf) -1 )
-        # avoid walls
-        wall_penalty = []
-        wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 1,1:2] - robot_pos[:,1:2],keepdim=True,dim=1))
-        wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 3,1:2] - robot_pos[:,1:2],keepdim=True,dim=1))
-        wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 2,0:1] - robot_pos[:,0:1],keepdim=True,dim=1))
-        wall_penalty.append(torch.norm(self.root_states[self.num_actors_per_env * env_ids + 4,0:1] - robot_pos[:,0:1],keepdim=True,dim=1))
-        wall_penalty =  torch.min(torch.stack(wall_penalty, axis=1),axis=1)[0].squeeze(1)
-        wall_penalty = -0.05* 1/ (0.05+torch.abs(wall_penalty))
-
-        # Smoothness reward
+        # # avoid walls
+        wall_penalty = -5.0 * torch.sum(1. * (torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1),
+                         dim=1).to(self.device)
+        # # Smoothness reward
         smoothness_reward = 0.5 * 1/(1+torch.norm(self.curr_robot_velocities - self.prev_robot_velocities, dim=1))
-        self.rew_buf = task_reward + smoothness_reward + wall_penalty + time_penalty
+        self.rew_buf = task_reward + smoothness_reward + wall_penalty
 
         self.episode_sums["goal_distance"] = torch.cat([self.episode_sums["goal_distance"],torch.norm(robot_pos[:,:1] - self.goals[:,:1],dim=1, keepdim=True)],dim=1)
         self.episode_sums["timeouts"] += self.time_out_buf.to(torch.float32)
@@ -418,4 +425,7 @@ class World(Navigator):
     def step(self, cmd):
         self.prev_robot_velocities = torch.clone(self.curr_robot_velocities)
         self.curr_robot_velocities = torch.clone(cmd)
-        return super().step(cmd)
+        obs, rew, done, extras = super().step(cmd)
+        if self.add_box:
+            obs["box_info"] =  self.box_info
+        return obs, rew, done, extras
