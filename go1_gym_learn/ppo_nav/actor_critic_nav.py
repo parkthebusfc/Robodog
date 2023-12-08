@@ -66,7 +66,7 @@ class ActorCritic_Nav(nn.Module):
 
         # Value function
         critic_layers = []
-        critic_layers.append(nn.Linear(self.num_obs_history, AC_Args.critic_hidden_dims[0]))
+        critic_layers.append(nn.Linear(self.num_obs_history+3, AC_Args.critic_hidden_dims[0]))
         critic_layers.append(activation)
         for l in range(len(AC_Args.critic_hidden_dims)):
             if l == len(AC_Args.critic_hidden_dims) - 1:

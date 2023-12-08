@@ -33,7 +33,7 @@ class World(Navigator):
 
         net_contact_forces = gymtorch.wrap_tensor(self.gym.acquire_net_contact_force_tensor(self.sim))
         
-        env_ids = np.arange(self.num_envs) * (net_contact_forces.shape[0])
+        env_ids = np.arange(self.num_envs) * (net_contact_forces.shape[0] // self.num_envs)
 
         self.net_contact_forces = []
         for start_point in env_ids:
@@ -373,8 +373,8 @@ class World(Navigator):
 
         if cfg.env.record_video:
             bx, by, bz = self.env_origins[0]
-            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx + 4.0, by, bz + 4.0),
-                                         gymapi.Vec3(bx + 1.5, by, bz))
+            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx + 2.0, by, bz + 4.0),
+                                         gymapi.Vec3(bx + 2.0, by, bz))
 
         if cfg.env.record_video and 0 in env_ids:
             if self.complete_video_frames is None:
@@ -410,9 +410,9 @@ class World(Navigator):
         self.episode_sums["successes"] += (robot_pos[:,0] >= self.goals[:,0]).to(torch.float)
 
         last_stat = self.stats.iloc[-1]
-        success_buff = (robot_pos[:,0] >= self.goals[:,0]).to(torch.float)
+        success_buff = (robot_pos[:,0] >= self.goals[:,0]).to(torch.float).cpu()
         last_stat["success"] += torch.sum(success_buff).numpy()
-        last_stat["episodes"] += torch.sum(success_buff).numpy() + torch.sum(self.time_out_buf.to(torch.float32)).numpy()
+        last_stat["episodes"] += torch.sum(success_buff).numpy() + torch.sum(self.time_out_buf.to(torch.float32)).cpu().numpy()
         self.stats.loc[len(self.stats)] = last_stat
 
     def check_termination(self):
@@ -441,3 +441,9 @@ class World(Navigator):
         if self.add_box:
             obs["box_info"] =  self.box_info
         return obs, rew, done, extras
+    
+    def get_observations(self):
+        obs = super().get_observations()
+        if self.add_box:
+            obs["box_info"] =  self.box_info
+        return obs

@@ -22,7 +22,7 @@ def train_nav(headless=True):
     # dirs = glob.glob(f"../runs/{label}/*")
     # logdir = sorted(dirs)[0]
     curr_file_path = os.path.dirname(os.path.abspath(__file__))
-    label_locomotion = os.path.join(curr_file_path,"../runs/gait-conditioned-agility/pretrain-v0/train/025417.456545")
+    label_locomotion = os.path.join(curr_file_path,"../runs/gait-conditioned-agility/2023-11-03/train/210513.245978")
     
     print(label_locomotion)
 
@@ -78,7 +78,6 @@ def train_nav(headless=True):
     #env = VelocityTrackingEasyEnv(sim_device='cuda:0', headless=headless, cfg=Cfg)
     env = World(sim_device=f'cuda:{gpu_id}',headless=headless, cfg=Cfg, locomtion_model_dir= label_locomotion)
     runner = Runner(env, device=f"cuda:{gpu_id}")
-    logger.log_params(Cfg=vars(Cfg))
     runner.learn(num_learning_iterations=30000, init_at_random_ep_len=True, eval_freq=100)
 
 

@@ -124,9 +124,9 @@ def play_go1(headless=False):
     import os
 
     curr_file_path = os.path.dirname(os.path.abspath(__file__))
-    label_nav = os.path.join(curr_file_path,"aaj116/2023/11-27/155016")
+    label_nav = os.path.join(curr_file_path,"ak2227/scratch/2023/11-27/155016")
 
-    label_locomotion = os.path.join(curr_file_path,"../runs/gait-conditioned-agility/pretrain-v0/train/025417.456545")
+    label_locomotion = os.path.join(curr_file_path,"../runs/gait-conditioned-agility/2023-11-03/train/210513.245978")
     
     env, policy_nav = load_env(label_nav, label_locomotion, headless=headless)
 
@@ -155,4 +155,4 @@ def write_video(images, video_path, fps=30):
 
 if __name__ == '__main__':
     # to see the environment rendering, set headless=False
-    play_go1(headless=False)
+    play_go1(headless=True)

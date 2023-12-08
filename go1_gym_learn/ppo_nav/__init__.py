@@ -94,7 +94,7 @@ class Runner:
 
         # init storage and model
         self.alg.init_storage(self.env.num_train_envs, self.num_steps_per_env, [self.env.nav_obs_len],
-                               [self.env.num_nav_obs_history], [self.env.num_actions])
+                               [self.env.num_nav_obs_history + 3], [self.env.num_actions])
 
         self.tot_timesteps = 0
         self.tot_time = 0
@@ -149,7 +149,7 @@ class Runner:
 
                 # Learning step
                 start = stop
-                self.alg.compute_returns(nav_obs_history[:num_train_envs])
+                self.alg.compute_returns(torch.cat((nav_obs_history[:num_train_envs],box_info[:num_train_envs]),dim=-1))
 
             mean_value_loss, mean_surrogate_loss,  mean_decoder_loss, mean_decoder_loss_student, mean_decoder_test_loss, mean_decoder_test_loss_student = self.alg.update()
             stop = time.time()
