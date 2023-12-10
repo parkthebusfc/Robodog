@@ -146,6 +146,8 @@ class Runner:
 
                 stop = time.time()
                 collection_time = stop - start
+                import os
+                self.env.stats.to_csv(os.path.join(logger.root,"stats.csv"))
 
                 # Learning step
                 start = stop
@@ -154,7 +156,6 @@ class Runner:
             mean_value_loss, mean_surrogate_loss,  mean_decoder_loss, mean_decoder_loss_student, mean_decoder_test_loss, mean_decoder_test_loss_student = self.alg.update()
             stop = time.time()
             learn_time = stop - start
-
             logger.store_metrics(
                 # total_time=learn_time - collection_time,
                 time_elapsed=logger.since('start'),

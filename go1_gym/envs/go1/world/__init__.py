@@ -9,6 +9,7 @@ import os
 from isaacgym.torch_utils import *
 import math
 import pandas as pd
+import numpy as np
 
 from go1_gym.envs.base.legged_robot_config import Cfg
 
@@ -204,8 +205,8 @@ class World(Navigator):
                 self.wall_handles.append(wall_handle)
             
             if self.add_box:
-                cube_offset = [0.8,0.0,1.0]
-                cube_dim = [0.4,torch_rand_float(0.3,1.5,(1,1), device=self.device).cpu().numpy()[0][0],2.0]
+                cube_offset = [0.8,0.0,0.5]
+                cube_dim = [0.4,torch_rand_float(0.3,1.5,(1,1), device=self.device).cpu().numpy()[0][0],1.0]
                 #randomize offset based on y-dimension
                 y_offset = (1 - 0.06) - (cube_dim[1]/2)
                 #y_offset_max = (pos[1] - 1 + 0.06) - (cube_dim[1]/2)
@@ -373,8 +374,8 @@ class World(Navigator):
 
         if cfg.env.record_video:
             bx, by, bz = self.env_origins[0]
-            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx + 2.0, by, bz + 4.0),
-                                         gymapi.Vec3(bx + 2.0, by, bz))
+            self.gym.set_camera_location(self.rendering_camera, self.envs[0], gymapi.Vec3(bx + 3.5, by, bz + 6.0),
+                                         gymapi.Vec3(bx + 1.5, by, bz))
 
         if cfg.env.record_video and 0 in env_ids:
             if self.complete_video_frames is None:
@@ -389,20 +390,35 @@ class World(Navigator):
             else:
                 self.complete_video_frames_eval = self.video_frames_eval[:]
             self.video_frames_eval = []
+
+    
+    def refresh_contact_forces(self):
+        net_contact_forces = gymtorch.wrap_tensor(self.gym.acquire_net_contact_force_tensor(self.sim))
+        env_ids = np.arange(self.num_envs) * (net_contact_forces.shape[0] // self.num_envs)
+        
+        indices = []
+        for start_point in env_ids:
+            indices.extend((torch.arange(self.num_bodies)+start_point).tolist())
+
+        self.contact_forces = gymtorch.wrap_tensor(self.gym.acquire_net_contact_force_tensor(self.sim))[indices, :].view(self.num_envs, -1, 3)
+        
+
     
     def compute_reward(self):
+        self.refresh_contact_forces()
         self.rew_buf[:] = 0
         env_ids = torch.arange(self.num_envs)  
         robot_pos = self.root_states[self.num_actors_per_env * env_ids,0:3]    
         # # reward structure (+ve main task) * exp(negative auxiliary rewards)
-        task_reward = 1/(0.2+ torch.abs((robot_pos[:,0] - self.goals[:,0])))
+        #task_reward = 1/(0.2+ torch.abs((robot_pos[:,0] - self.goals[:,0])))
+        task_reward = - torch.exp(-(robot_pos[:,0] - 3)) + 1
         time_penalty = -0.02 * (torch.exp(0.005*self.episode_length_buf) -1 )
         # # avoid walls
-        wall_penalty = -5.0 * torch.sum(1. * (torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1),
+        wall_penalty = -0.2 * torch.sum(1. * (torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1),
                          dim=1).to(self.device)
         # # Smoothness reward
-        smoothness_reward = 0.5 * 1/(1+torch.norm(self.curr_robot_velocities - self.prev_robot_velocities, dim=1))
-        self.rew_buf = task_reward + smoothness_reward + wall_penalty + time_penalty
+        #smoothness_reward = 0.5 * 1/(1+torch.norm(self.curr_robot_velocities - self.prev_robot_velocities, dim=1))
+        self.rew_buf = task_reward + wall_penalty + time_penalty
 
         self.episode_sums["goal_distance"] = torch.cat([self.episode_sums["goal_distance"],torch.norm(robot_pos[:,:1] - self.goals[:,:1],dim=1, keepdim=True)],dim=1)
         self.episode_sums["timeouts"] += self.time_out_buf.to(torch.float32)
