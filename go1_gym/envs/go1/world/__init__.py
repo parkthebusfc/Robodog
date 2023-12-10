@@ -405,20 +405,14 @@ class World(Navigator):
 
     
     def compute_reward(self):
-        self.refresh_contact_forces()
         self.rew_buf[:] = 0
         env_ids = torch.arange(self.num_envs)  
         robot_pos = self.root_states[self.num_actors_per_env * env_ids,0:3]    
-        # # reward structure (+ve main task) * exp(negative auxiliary rewards)
-        #task_reward = 1/(0.2+ torch.abs((robot_pos[:,0] - self.goals[:,0])))
+        # reward structure (+ve main task) * exp(negative auxiliary rewards)
         task_reward = - torch.exp(-(robot_pos[:,0] - 3)) + 1
-        time_penalty = -0.02 * (torch.exp(0.005*self.episode_length_buf) -1 )
-        # # avoid walls
-        wall_penalty = -0.2 * torch.sum(1. * (torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1),
-                         dim=1).to(self.device)
-        # # Smoothness reward
-        #smoothness_reward = 0.5 * 1/(1+torch.norm(self.curr_robot_velocities - self.prev_robot_velocities, dim=1))
-        self.rew_buf = task_reward + wall_penalty + time_penalty
+        time_penalty = -0.1 * (torch.exp(0.005*self.episode_length_buf) -1 )
+        # Smoothness reward
+        self.rew_buf = task_reward + time_penalty
 
         self.episode_sums["goal_distance"] = torch.cat([self.episode_sums["goal_distance"],torch.norm(robot_pos[:,:1] - self.goals[:,:1],dim=1, keepdim=True)],dim=1)
         self.episode_sums["timeouts"] += self.time_out_buf.to(torch.float32)
@@ -432,8 +426,12 @@ class World(Navigator):
         self.stats.loc[len(self.stats)] = last_stat
 
     def check_termination(self):
+        self.refresh_contact_forces()
+        # terminate on collision
+        self.reset_buf = (torch.sum(1. * (torch.norm(self.contact_forces[:, self.penalised_contact_indices, :], dim=-1) > 0.1),
+                         dim=1) > 0)
         self.time_out_buf = self.episode_length_buf > self.cfg.env.max_episode_length
-        self.reset_buf = self.time_out_buf
+        self.reset_buf |= self.time_out_buf
         env_ids = torch.arange(self.num_envs)
         self.reset_buf |= (self.root_states[self.num_actors_per_env * env_ids, 0] > self.goals[:, 0])
 
